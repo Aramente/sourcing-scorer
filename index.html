@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sourcing Triage — GitGuardian</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F1F4F8;--white:#FFFFFF;--text:#0F172A;--text-2:#475569;--text-3:#94A3B8;
+  --border:#E2E8F0;--border-s:#CBD5E1;
+  --blue:#1D4ED8;--blue-dim:#EFF6FF;
+  --green:#16A34A;--green-dim:#F0FDF4;
+  --red:#DC2626;--red-dim:#FEF2F2;
+  --amber:#D97706;--amber-dim:#FFFBEB;
+  --indigo:#4F46E5;--indigo-dim:#EEF2FF;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --mono:'SF Mono','Fira Code',Consolas,monospace;
+  --r:10px;
+}
+html{background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{min-height:100vh}
+.screen{display:none}.screen.active{display:block}
+
+/* ── UPLOAD ── */
+#screen-upload{max-width:560px;margin:0 auto;padding:72px 24px 80px}
+.upload-eyebrow{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:10px}
+.upload-title{font-size:30px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
+.upload-sub{font-size:14px;color:var(--text-2);margin-bottom:32px}
+.drop-zone{border:2px dashed var(--border-s);border-radius:14px;background:var(--white);padding:48px 32px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.drop-zone:hover,.drop-zone.over{border-color:var(--blue);background:var(--blue-dim)}
+.drop-zone.over{border-style:solid}
+.drop-icon{font-size:32px;margin-bottom:12px;color:var(--text-3)}
+.drop-label{font-size:15px;font-weight:500;margin-bottom:6px}
+.drop-link{color:var(--blue);text-decoration:underline}
+.drop-hint{font-size:13px;color:var(--text-3)}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-prev{margin-top:16px;background:var(--white);border:1px solid var(--border);border-radius:8px;padding:14px 18px;font-size:13px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.upload-prev.hidden{display:none}
+.upload-footer{margin-top:20px;display:flex;justify-content:flex-end}
+.btn-ghost{font:inherit;font-size:13px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:4px 0}
+.btn-ghost:hover{color:var(--blue)}
+.upload-error{margin-top:14px;background:var(--red-dim);border:1px solid #FECACA;border-radius:8px;padding:12px 16px;font-size:13px;color:var(--red);display:none}
+
+/* Merge confirm */
+.merge-confirm{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center}
+.merge-confirm.hidden{display:none}
+.merge-box{background:var(--white);border-radius:14px;padding:28px 32px;width:min(440px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.merge-title{font-size:17px;font-weight:700;margin-bottom:8px}
+.merge-sub{font-size:14px;color:var(--text-2);margin-bottom:22px;line-height:1.5}
+.merge-actions{display:flex;gap:10px}
+.btn-merge{font:inherit;font-size:14px;font-weight:600;padding:10px 20px;background:var(--blue);color:#fff;border:none;border-radius:8px;cursor:pointer}
+.btn-merge:hover{background:#1e40af}
+.btn-replace{font:inherit;font-size:14px;font-weight:500;padding:10px 20px;background:var(--white);color:var(--text-2);border:1.5px solid var(--border-s);border-radius:8px;cursor:pointer}
+.btn-replace:hover{border-color:var(--red);color:var(--red)}
+
+/* ── PICKER ── */
+#screen-picker{max-width:680px;margin:0 auto;padding:48px 24px 80px}
+.picker-eyebrow{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:10px}
+.picker-title{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
+.picker-sub{font-size:14px;color:var(--text-2);margin-bottom:32px}
+.job-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:18px 22px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:16px;transition:border-color .15s,box-shadow .15s}
+.job-card:hover{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-dim)}
+.job-card-info{flex:1;min-width:0}
+.job-card-title{font-size:15px;font-weight:600;margin-bottom:4px}
+.job-card-counts{display:flex;gap:8px}
+.count-badge{font-size:12px;font-weight:600;padding:2px 9px;border-radius:20px;font-variant-numeric:tabular-nums}
+.count-hot{background:var(--amber-dim);color:var(--amber)}
+.count-warm{background:var(--blue-dim);color:var(--blue)}
+.count-zero{background:var(--bg);color:var(--text-3)}
+.job-card-arrow{color:var(--text-3);font-size:18px;flex-shrink:0;transition:color .15s,transform .15s}
+.job-card:hover .job-card-arrow{color:var(--blue);transform:translateX(3px)}
+
+/* ── TRIAGE ── */
+#screen-triage{max-width:860px;margin:0 auto;padding:0 16px 80px}
+.triage-header{position:sticky;top:0;z-index:10;background:var(--bg);padding:16px 0 12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);margin-bottom:16px}
+.triage-job-title{font-size:15px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn-back{font:inherit;font-size:13px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;flex-shrink:0}
+.btn-back:hover{text-decoration:underline}
+.triage-stats{font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.triage-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0 8px}
+.ctrl-chip{font:inherit;font-size:12px;font-weight:500;color:var(--text-2);background:var(--white);border:1.5px solid var(--border);border-radius:20px;padding:4px 12px;cursor:pointer;transition:all .12s}
+.ctrl-chip:hover:not(:disabled){border-color:var(--blue);color:var(--blue)}
+.ctrl-chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.ctrl-chip:disabled{opacity:.4;cursor:default}
+.ctrl-sep{width:1px;height:18px;background:var(--border);flex-shrink:0}
+.cand-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:16px 18px;margin-bottom:8px;transition:border-color .12s}
+.cand-card.decided{opacity:.55}
+.cand-header{display:flex;align-items:flex-start;gap:12px}
+.cand-score{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;min-width:44px;text-align:right;flex-shrink:0}
+.score-hot{color:var(--amber)}.score-warm{color:var(--blue)}
+.cand-meta{flex:1;min-width:0}
+.cand-name{font-size:15px;font-weight:600;margin-bottom:2px}
+.cand-title{font-size:13px;color:var(--text-2);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cand-company{font-size:12px;color:var(--text-3)}
+.cand-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.btn-keep,.btn-skip{font:inherit;font-size:13px;font-weight:500;border-radius:8px;padding:6px 14px;border:1.5px solid;cursor:pointer;transition:all .12s}
+.btn-keep{background:var(--white);border-color:var(--border);color:var(--text-2)}
+.btn-keep:hover,.btn-keep.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.btn-skip{background:var(--white);border-color:var(--border);color:var(--text-2)}
+.btn-skip:hover,.btn-skip.active{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+.btn-li{font:inherit;font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;flex-shrink:0}
+.btn-li:hover{color:var(--indigo)}
+.cand-reasons{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.reason-tag{font-size:11px;font-weight:500;background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:20px}
+.pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px 0 8px}
+.page-btn{font:inherit;font-size:13px;font-weight:500;background:var(--white);border:1.5px solid var(--border);border-radius:8px;padding:6px 16px;cursor:pointer}
+.page-btn:hover:not(:disabled){border-color:var(--blue);color:var(--blue)}
+.page-btn:disabled{opacity:.4;cursor:default}
+.page-info{font-size:13px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.fab-group{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.fab{font:inherit;font-size:13px;font-weight:600;border-radius:24px;padding:10px 18px;border:none;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);transition:box-shadow .15s,transform .15s}
+.fab:hover{box-shadow:0 4px 16px rgba(0,0,0,.2);transform:translateY(-1px)}
+.fab-secondary{background:var(--white);color:var(--text-2);border:1.5px solid var(--border)}
+.fab.hidden{display:none}
+.blocked-chips{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 8px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;background:var(--red-dim);color:var(--red);border:1px solid #FECACA;border-radius:20px;padding:3px 10px}
+.chip-x{cursor:pointer;font-size:14px;line-height:1;opacity:.7}.chip-x:hover{opacity:1}
+
+/* ── SETTINGS ── */
+#screen-settings{max-width:560px;margin:0 auto;padding:48px 24px 80px}
+.settings-header{display:flex;align-items:center;gap:12px;margin-bottom:32px}
+.settings-title{font-size:22px;font-weight:700}
+.settings-section{margin-bottom:32px}
+.settings-section-title{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;gap:16px}
+.settings-label{font-size:14px}
+.settings-desc{font-size:12px;color:var(--text-3);margin-top:2px}
+.toggle{position:relative;width:40px;height:22px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:var(--border-s);border-radius:11px;cursor:pointer;transition:background .2s}
+.toggle input:checked+.toggle-track{background:var(--blue)}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle input:checked~.toggle-thumb{transform:translateX(18px)}
+.threshold-wrap{display:flex;align-items:center;gap:12px}
+.threshold-wrap input[type=range]{flex:1;accent-color:var(--blue)}
+.threshold-val{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;min-width:28px;text-align:right}
+.job-item{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--white);border:1px solid var(--border);border-radius:8px;margin-bottom:8px}
+.job-item-title{flex:1;font-size:14px}
+.btn-del{font:inherit;font-size:18px;line-height:1;color:var(--text-3);background:none;border:none;cursor:pointer;padding:0 2px}
+.btn-del:hover{color:var(--red)}
+.add-job-form{display:flex;gap:8px;margin-top:10px}
+.add-job-input{flex:1;font:inherit;font-size:14px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);outline:none}
+.add-job-input:focus{border-color:var(--blue)}
+.btn-add{font:inherit;font-size:13px;font-weight:600;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:8px 16px;cursor:pointer}
+.btn-add:hover{background:#1e40af}
+.btn-danger{font:inherit;font-size:13px;font-weight:500;background:var(--red-dim);color:var(--red);border:1.5px solid #FECACA;border-radius:8px;padding:8px 16px;cursor:pointer}
+.btn-danger:hover{background:#fee2e2}
+
+/* ── OVERLAYS ── */
+.overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:flex-end}
+.overlay.hidden{display:none}
+.overlay-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.25)}
+.overlay-panel{position:relative;z-index:1;background:var(--white);border-radius:16px 16px 0 0;padding:24px;width:min(420px,100%);max-height:70vh;overflow-y:auto}
+.overlay-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.overlay-sub{font-size:13px;color:var(--text-2);margin-bottom:20px}
+.overlay-close{position:absolute;top:20px;right:20px;font:inherit;font-size:20px;color:var(--text-3);background:none;border:none;cursor:pointer;line-height:1}
+.overlay-close:hover{color:var(--text)}
+.refine-q{background:var(--bg);border-radius:8px;padding:14px;margin-bottom:10px}
+.refine-q.resolved{opacity:.5}
+.refine-q-lbl{font-size:14px;margin-bottom:10px;line-height:1.5}
+.refine-choices{display:flex;gap:8px}
+.refine-yes{font:inherit;font-size:13px;font-weight:500;background:var(--blue);color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer}
+.refine-no{font:inherit;font-size:13px;color:var(--text-2);background:var(--white);border:1.5px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer}
+.pattern-tag{background:var(--indigo-dim);color:var(--indigo);padding:1px 6px;border-radius:4px;font-size:13px;font-weight:500}
+.lists-section{margin-bottom:20px}
+.lists-section-title{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px}
+.company-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);gap:8px}
+.company-row:last-child{border-bottom:none}
+.company-name{font-size:13px;flex:1}
+.company-count{font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.btn-copy{font:inherit;font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:2px 8px;border-radius:4px}
+.btn-copy:hover{background:var(--blue-dim)}
+.lists-empty{font-size:13px;color:var(--text-3);text-align:center;padding:20px 0}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
+.toast.hidden{opacity:0}
+</style>
+
+<!-- UPLOAD -->
+<div id="screen-upload" class="screen active">
+  <div id="upload-wrap" style="max-width:520px;margin:0 auto;padding:72px 24px 80px">
+    <div class="upload-eyebrow">GitGuardian Recruiting</div>
+    <h1 class="upload-title">Sourcing Triage</h1>
+    <p class="upload-sub">Upload a LinkedIn CSV to score and triage candidates against open roles.</p>
+    <div class="drop-zone" id="drop-zone">
+      <div class="drop-icon">⬆</div>
+      <div class="drop-label">Drop your CSV here, or <span class="drop-link">click to browse</span></div>
+      <div class="drop-hint" style="margin-top:6px">LinkedIn → "Find People to Hire" → Export CSV</div>
+      <input type="file" id="file-input" accept=".csv,.txt">
+    </div>
+    <div class="upload-error" id="upload-error"></div>
+    <div class="upload-prev hidden" id="upload-prev">
+      <span id="upload-prev-msg"></span>
+      <button class="btn-ghost" onclick="showScreen('settings')">⚙ Edit jobs &amp; settings</button>
+    </div>
+    <div class="upload-footer">
+      <button class="btn-ghost" onclick="showScreen('settings')">⚙ Settings &amp; Jobs</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merge confirm modal -->
+<div class="merge-confirm hidden" id="merge-confirm">
+  <div class="merge-box">
+    <div class="merge-title">New CSV detected</div>
+    <div class="merge-sub" id="merge-sub"></div>
+    <div class="merge-actions">
+      <button class="btn-merge" onclick="confirmMerge(true)">Merge — add to existing</button>
+      <button class="btn-replace" onclick="confirmMerge(false)">Replace — start fresh</button>
+    </div>
+  </div>
+</div>
+
+<!-- PICKER -->
+<div id="screen-picker" class="screen">
+  <div style="max-width:680px;margin:0 auto;padding:48px 24px 80px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+      <div>
+        <div class="picker-eyebrow">GitGuardian Recruiting</div>
+        <h1 class="picker-title">Choose a role to triage</h1>
+        <p class="picker-sub" id="picker-sub"></p>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn-ghost" onclick="initUpload();showScreen('upload')">↑ New CSV</button>
+        <button class="btn-ghost" onclick="showScreen('settings')">⚙ Settings</button>
+      </div>
+    </div>
+    <div id="job-list"></div>
+  </div>
+</div>
+
+<!-- TRIAGE -->
+<div id="screen-triage" class="screen">
+  <div class="triage-header">
+    <button class="btn-back" onclick="showScreen('picker')">← Jobs</button>
+    <div class="triage-job-title" id="triage-job-title"></div>
+    <div class="triage-stats" id="triage-stats"></div>
+    <button class="btn-ghost" onclick="showScreen('settings')">⚙</button>
+  </div>
+  <div class="triage-controls" id="triage-controls"></div>
+  <div id="blocked-chips"></div>
+  <div id="cand-list"></div>
+  <div id="pager"></div>
+  <div class="fab-group">
+    <button class="fab fab-secondary hidden" id="refine-fab" onclick="showRefine()">
+      Patterns in skips <span id="refine-skip-count">0</span>
+    </button>
+    <button class="fab fab-secondary" onclick="showLists()">Company lists</button>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="screen-settings" class="screen">
+  <div style="max-width:560px;margin:0 auto;padding:48px 24px 80px">
+    <div class="settings-header">
+      <button class="btn-back" onclick="settingsBack()">← Back</button>
+      <div class="settings-title">Settings &amp; Jobs</div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Scoring</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">HOT threshold</div>
+          <div class="settings-desc">Candidates at or above this score appear as HOT</div>
+        </div>
+        <div class="threshold-wrap">
+          <input type="range" min="50" max="90" step="1" id="thresh-slider" oninput="updateThreshold(this.value)">
+          <div class="threshold-val" id="thresh-val"></div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Auto-exclusion filters</div>
+      <div class="settings-row">
+        <div><div class="settings-label">CFO / Finance Directors</div><div class="settings-desc">Directeur Financier, VP Finance, Head of Finance…</div></div>
+        <label class="toggle"><input type="checkbox" id="tog-cfo" onchange="updateFilter('filterCFO',this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+      </div>
+      <div class="settings-row">
+        <div><div class="settings-label">Interim / Manager de transition</div><div class="settings-desc">Titles explicitly mentioning interim or contract roles</div></div>
+        <label class="toggle"><input type="checkbox" id="tog-interim" onchange="updateFilter('filterInterim',this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+      </div>
+      <div class="settings-row">
+        <div><div class="settings-label">Expert Comptable (external CPA)</div><div class="settings-desc">External accounting firm practitioners, not in-house</div></div>
+        <label class="toggle"><input type="checkbox" id="tog-ec" onchange="updateFilter('filterExpertComptable',this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Open roles</div>
+      <div id="jobs-list"></div>
+      <div class="add-job-form">
+        <input class="add-job-input" type="text" id="add-job-input" placeholder="Job title…" onkeydown="if(event.key==='Enter')addJob()">
+        <button class="btn-add" onclick="addJob()">Add</button>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Data</div>
+      <div class="settings-row">
+        <div><div class="settings-label">Clear all decisions</div><div class="settings-desc">Reset keep/skip choices for all candidates</div></div>
+        <button class="btn-danger" onclick="clearDecisions()">Clear</button>
+      </div>
+      <div class="settings-row">
+        <div><div class="settings-label">Clear blocked companies</div><div class="settings-desc">Remove all company blocks and hidden patterns</div></div>
+        <button class="btn-danger" onclick="clearBlocks()">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Overlays -->
+<div id="overlay-lists" class="overlay hidden">
+  <div class="overlay-backdrop" onclick="hideLists()"></div>
+  <div class="overlay-panel">
+    <div class="overlay-title">Company lists</div>
+    <button class="overlay-close" onclick="hideLists()">×</button>
+    <div id="lists-content"></div>
+  </div>
+</div>
+<div id="overlay-refine" class="overlay hidden">
+  <div class="overlay-backdrop" onclick="hideRefine()"></div>
+  <div class="overlay-panel">
+    <div class="overlay-title">Patterns in skips</div>
+    <div class="overlay-sub" id="refine-sub"></div>
+    <button class="overlay-close" onclick="hideRefine()">×</button>
+    <div id="refine-questions"></div>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════
+// MATCHER CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const POSSIBLE = 40;
+const ROLE_FAMILIES = {
+  bdr_sdr:new Set(["bdr","sdr","business development representative","inside sales","outbound","lead generation","prospecting"]),
+  ae_exec:new Set(["account executive","enterprise account","regional vp","vp sales","vp of sales","commercial director","head of revenue","head of sales","chief revenue","cro","closing","new business","quota","enterprise sales","directeur commercial","directrice commerciale","responsable commercial","responsable grands comptes","ingénieur d'affaires","chargé d'affaires","directeur général","directrice générale","managing director","responsable développement commercial"]),
+  channel:new Set(["channel partner","channel","alliance","reseller","indirect","ecosystem","distribution","channel account"]),
+  csm:new Set(["customer success","csm","onboarding","retention","renewal","adoption","customer care","responsable succès client","chargé de clientèle","gestionnaire de comptes client","responsable client"]),
+  acct_mgmt:new Set(["account manager","key account","strategic account","client manager","global account","client success"]),
+  solutions:new Set(["solutions engineer","sales engineer","presales","pre-sales","implementation engineer","technical sales","solution consultant","principal sales"]),
+  security_research:new Set(["security researcher","vulnerability researcher","threat researcher","malware researcher","threat intelligence","threat research","reverse engineer","bug bounty","malware","reverse","exploit","red team","ethical hacker","chercheur sécurité","chercheur en sécurité"]),
+  security_ops:new Set(["soc","iam","identity","grc analyst","grc","endpoint security","endpoint","detection engineer","threat hunter","zero trust","ingénieur soc","analyste soc","ingénieur grc"]),
+  security_eng:new Set(["security engineer","security architect","cloud security","ciso","appsec","application security","devsecops","vulnerability","pentest","penetration","secops","infosec","cybersecurity engineer","consultant cybersécurité","ingénieur cybersécurité","consultant sécurité","analyste cybersécurité","ingénieur sécurité","analyste sécurité","responsable sécurité","expert cybersécurité"]),
+  ai_ml:new Set(["ai engineer","ml engineer","machine learning","ai","ml","llm","nlp","deep learning","neural","artificial intelligence","data scientist","scientist","computer vision","gen ai","genai"]),
+  data_eng:new Set(["data engineer","data engineering","data analytics","etl","warehouse","pipeline","dbt","spark","data platform","airflow","ingénieur données","ingénieur data","analyste données","analyste data","ingénieur bi","développeur bi"]),
+  devops:new Set(["devops engineer","devops","sre","platform engineer","infrastructure","reliability","kubernetes","terraform","ci/cd","gitops","cloud engineer","ingénieur devops","ingénieur infrastructure","ingénieur cloud","ingénieur sre","ingénieur plateforme"]),
+  qa_test:new Set(["qa engineer","test engineer","qa","quality","sdet","automation engineer","software engineer in test"]),
+  it_ops:new Set(["it specialist","sysadmin","helpdesk","it support","it ops","system administrator","network admin","it manager"]),
+  software:new Set(["engineering manager","engineering lead","software engineer","software developer","engineer","software","developer","backend","frontend","fullstack","full-stack","swe","django","python","golang","java","typescript","rust","ingénieur logiciel","ingénieur développement","développeur logiciel","développeur backend","développeur frontend","développeur fullstack","développeur web","développeur mobile","architecte logiciel","architecte technique"]),
+  product:new Set(["product","pm","product manager","product owner","discovery","roadmap","product strategy","chef de produit","responsable produit","directeur produit","directrice produit"]),
+  design:new Set(["designer","ux","ui","product design","user research","ux research"]),
+  growth_mkt:new Set(["growth","acquisition","demand generation","performance","seo","paid","inbound","marketing ops","revenue marketing","responsable marketing","directeur marketing","directrice marketing","chargé de marketing","chargée de marketing"]),
+  content_mkt:new Set(["content","copywriting","writer","journalist","editorial","cybersecurity content","responsable contenu","responsable éditorial","chargé de contenu","rédacteur"]),
+  field_mkt:new Set(["field marketing","events","conference","regional marketing","executive experience","abm"]),
+  brand_comms:new Set(["brand","communications","pr","public relations","social media","influencer","community","responsable communication","chargé de communication"]),
+  sales_ops:new Set(["sales operations","revenue operations","sales ops","revops","gtm","go-to-market","go to market","operations analyst","ops analyst","sales enablement","gtm operations"]),
+  finance:new Set(["finance","financial","fp&a","fpa","accounting","accountant","controller","cfo","treasury","trésorerie","tax","consolidation","planning analyst","contrôleur de gestion","contrôle de gestion","analyste financier","directeur financier","directrice financière","responsable financier","responsable comptabilité","comptable","analyste fp&a","administratif et financier","commissaire aux comptes","auditeur"]),
+  legal:new Set(["legal","counsel","compliance","law","contract","gdpr"]),
+  people_hr:new Set(["people","hr","human resources","recruiter","talent acquisition","hris","payroll","hrm","responsable rh","responsable ressources humaines","chargé de recrutement","chargée de recrutement","chargé ressources humaines","recruteur","recrutement"]),
+};
+const SENIORITY={exec:new Set(["vp","vice president","chief","cxo","ceo","cto","cfo","cmo","ciso","head","director","founder","president","directeur","directrice","pdg"]),lead:new Set(["lead","principal","staff","manager","mgr","responsable","chef de projet"]),senior:new Set(["senior","sr","expert","specialist","confirmé","expérimenté"]),mid:new Set(["engineer","manager ii","ii"]),junior:new Set(["junior","jr","associate","intern","graduate","entry","apprentice","apprenticeship","trainee","stagiaire","alternant","apprenti"])};
+const SENIORITY_ORDER=["junior","mid","senior","lead","exec"];
+const _SENIORITY_PHRASE_OVERRIDES=new Map([["chief accountant","lead"],["chef comptable","lead"]]);
+const SECURITY_HINTS=new Set(["security","cyber","cybersecurity","cybersécurité","infosec","appsec","secops","devsecops","secret","secrets","identity","iam","soc","threat","vulnerability","ciso","pentest","penetration","vault","credential","ggshield","gitguardian","nhi"]);
+const NOISE=new Set(["remote","hybrid","fully","based","focus","emea","amer","americas","apac","uki","nordics","dach","iberia","latam","germany","france","paris","london","berlin","frankfurt","madrid","amsterdam","boston","york","new","city","nyc","seattle","denver","austin","diego","san","atlanta","raleigh","washington","dc","philadelphia","uk","us","usa","the","and","of","for","to","in","at","a","an","south","east","west","north","netherlands","belgium","luxembourg","pennsylvania","team","g","i","senior","sr","junior","jr","manager","director","head","vp","lead","principal","staff","associate","analyst","consultant","engineer","specialist"]);
+const TITLE_MAP={"business development representative":"bdr_sdr","business development rep":"bdr_sdr","sales development representative":"bdr_sdr","sales development rep":"bdr_sdr","inside sales representative":"bdr_sdr","inside sales rep":"bdr_sdr","inside sales":"bdr_sdr","outbound sales":"bdr_sdr","bdr":"bdr_sdr","sdr":"bdr_sdr","mdr":"bdr_sdr","account executive":"ae_exec","enterprise account executive":"ae_exec","vp of sales":"ae_exec","vp sales":"ae_exec","chief revenue officer":"ae_exec","cro":"ae_exec","head of sales":"ae_exec","director of sales":"ae_exec","sales director":"ae_exec","enterprise sales director":"ae_exec","enterprise sales manager":"ae_exec","regional sales manager":"ae_exec","closing manager":"ae_exec","sales manager":"ae_exec","business development manager":"ae_exec","managing director":"ae_exec","directeur commercial":"ae_exec","directrice commerciale":"ae_exec","responsable commercial":"ae_exec","ingénieur d'affaires":"ae_exec","responsable grands comptes":"ae_exec","directeur général":"ae_exec","directrice générale":"ae_exec","ceo":"ae_exec","chief executive officer":"ae_exec","pdg":"ae_exec","founder":"ae_exec","channel account manager":"channel","partner account manager":"channel","partner manager":"channel","alliance manager":"channel","ecosystem manager":"channel","head of partnerships":"channel","partnerships manager":"channel","customer success manager":"csm","csm":"csm","customer success specialist":"csm","onboarding manager":"csm","renewal manager":"csm","head of customer success":"csm","vp of customer success":"csm","director of customer success":"csm","account manager":"acct_mgmt","key account manager":"acct_mgmt","strategic account manager":"acct_mgmt","global account manager":"acct_mgmt","enterprise account manager":"acct_mgmt","solutions engineer":"solutions","sales engineer":"solutions","solutions architect":"solutions","presales engineer":"solutions","pre-sales engineer":"solutions","solutions consultant":"solutions","implementation engineer":"solutions","security researcher":"security_research","vulnerability researcher":"security_research","threat researcher":"security_research","malware analyst":"security_research","reverse engineer":"security_research","ethical hacker":"security_research","red team engineer":"security_research","threat intelligence analyst":"security_research","soc analyst":"security_ops","grc analyst":"security_ops","iam engineer":"security_ops","detection engineer":"security_ops","security analyst":"security_ops","information security analyst":"security_ops","infosec analyst":"security_ops","security engineer":"security_eng","application security engineer":"security_eng","cloud security engineer":"security_eng","security architect":"security_eng","cloud security architect":"security_eng","penetration tester":"security_eng","devsecops engineer":"security_eng","appsec engineer":"security_eng","ciso":"security_eng","chief information security officer":"security_eng","vp of security":"security_eng","director of security":"security_eng","head of security":"security_eng","rssi":"security_eng","ingénieur cybersécurité":"security_eng","pentesteur":"security_eng","ai engineer":"ai_ml","ml engineer":"ai_ml","machine learning engineer":"ai_ml","data scientist":"ai_ml","llm engineer":"ai_ml","data engineer":"data_eng","analytics engineer":"data_eng","bi developer":"data_eng","bi engineer":"data_eng","data analyst":["data_eng","ai_ml"],"devops engineer":"devops","sre":"devops","site reliability engineer":"devops","platform engineer":"devops","cloud engineer":"devops","infrastructure engineer":"devops","kubernetes engineer":"devops","qa engineer":"qa_test","quality assurance engineer":"qa_test","test automation engineer":"qa_test","sdet":"qa_test","software engineer":"software","backend engineer":"software","frontend engineer":"software","fullstack engineer":"software","full-stack engineer":"software","mobile engineer":"software","engineering manager":"software","tech lead":"software","technical lead":"software","cto":"software","chief technology officer":"software","software architect":"software","product manager":"product","pm":"product","product owner":"product","chief product officer":"product","head of product":"product","chef de produit":"product","ux designer":"design","ui designer":"design","product designer":"design","user researcher":"design","head of design":"design","growth manager":"growth_mkt","demand generation manager":"growth_mkt","performance marketing manager":"growth_mkt","seo manager":"growth_mkt","marketing manager":"growth_mkt","cmo":"growth_mkt","director of marketing":"growth_mkt","marketing director":"growth_mkt","content manager":"content_mkt","content writer":"content_mkt","copywriter":"content_mkt","technical writer":"content_mkt","field marketing manager":"field_mkt","events manager":"field_mkt","abm manager":"field_mkt","brand manager":"brand_comms","communications manager":"brand_comms","pr manager":"brand_comms","social media manager":"brand_comms","community manager":"brand_comms","sales operations manager":"sales_ops","revenue operations manager":"sales_ops","revops manager":"sales_ops","sales enablement manager":"sales_ops","crm manager":"sales_ops","head of revenue operations":"sales_ops","financial analyst":"finance","finance analyst":"finance","fp&a analyst":"finance","controller":"finance","financial controller":"finance","vp of finance":"finance","vp finance":"finance","chief financial officer":"finance","cfo":"finance","head of finance":"finance","director of finance":"finance","finance director":"finance","treasury manager":"finance","tax manager":"finance","accounting manager":"finance","head of accounting":"finance","chief accountant":"finance","accountant":"finance","comptable":"finance","chef comptable":"finance","trésorier":"finance","trésorier groupe":"finance","responsable trésorerie":"finance","directeur trésorerie":"finance","directeur contrôle de gestion":"finance","responsable contrôle de gestion":"finance","auditeur interne":"finance","auditeur externe":"finance","commissaire aux comptes":"finance","audit manager":"finance","daf":"finance","raf":"finance","directeur administratif et financier":"finance","directrice administrative et financière":"finance","responsable administratif et financier":"finance","responsable administratif financier":"finance","legal counsel":"legal","in-house counsel":"legal","general counsel":"legal","chief legal officer":"legal","compliance manager":"legal","compliance officer":"legal","dpo":"legal","gdpr specialist":"legal","recruiter":"people_hr","technical recruiter":"people_hr","talent acquisition manager":"people_hr","hr manager":"people_hr","human resources manager":"people_hr","hr business partner":"people_hr","hrbp":"people_hr","people operations manager":"people_hr","chro":"people_hr","responsable rh":"people_hr","drh":"people_hr"};
+const _ADJACENT=[new Set(["bdr_sdr","ae_exec","channel"]),new Set(["csm","acct_mgmt","ae_exec"]),new Set(["solutions","csm","ae_exec"]),new Set(["bdr_sdr","growth_mkt"]),new Set(["sales_ops","ae_exec","bdr_sdr"]),new Set(["software","data_eng","devops"]),new Set(["software","ai_ml","data_eng"]),new Set(["devops","security_eng"]),new Set(["solutions","security_eng"]),new Set(["devops","it_ops"]),new Set(["qa_test","software"]),new Set(["product","design","software"]),new Set(["growth_mkt","field_mkt","brand_comms","content_mkt"]),new Set(["finance","legal","people_hr"]),new Set(["security_research","security_eng"]),new Set(["security_eng","security_ops"]),new Set(["devops","security_ops"])];
+const _SPECIFIC_FAMS=new Set(["qa_test","data_eng","devops","ai_ml","security_eng","solutions"]);
+const _TOKEN_RE=/[a-z0-9À-ɏ&+]+/g;
+const _famCache=new Map();
+
+// ═══════════════════════════════════════════════════════════════════
+// MATCHER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+function _normalize(t){let s=t.toLowerCase();s=s.replace(/\([^)]*\)/g,' ');s=s.replace(/[\u{1F000}-\u{1FAFF}☀-➿]/gu,' ');return s}
+function _tokens(t){const n=_normalize(t);return new Set((n.match(_TOKEN_RE)||[]).filter(w=>!NOISE.has(w)&&w.length>1))}
+function _phrasesPresent(t,words){const n=_normalize(t),toks=_tokens(t);let h=0;for(const w of words){if(w.includes(' ')?n.includes(w):toks.has(w))h++}return h}
+function normTitle(t){let n=_normalize(t);if(n.includes('|'))n=n.split('|')[0].trim();n=n.replace(/\s*[,·–—\-|/]\s*(emea|amer|apac|dach|latam|usa|us|uk|france|paris|london|germany|amsterdam|east|west|north|south|remote|hybrid|global|hq|worldwide|international)\b.*/i,'').trim();n=n.replace(/\s+\b(emea|amer|apac|dach|latam|usa|us|uk|germany|france|paris|london|amsterdam|netherlands|belgium|luxembourg|east|west|north|south|remote|hybrid)\b\s*$/i,'').trim();n=n.replace(/^co[-\s]+/i,'').trim();n=n.replace(/^(senior|sr\.?\s|lead|principal|staff|junior|jr\.?\s|associate|founding|entry\s+level)\s+/i,'').trim();n=n.replace(/\s+(senior|sr|junior|jr|confirmé|expérimentée?|expert|autonome|débutant)\s*$/i,'').trim();n=n.replace(/\s+(i{1,3}|iv|[123])\s*$/,'').trim();return n}
+function famTop2(t){if(_famCache.has(t))return _famCache.get(t);const tl=normTitle(t);const mapped=TITLE_MAP[tl];if(mapped!==undefined){const r=Array.isArray(mapped)?mapped:[mapped];_famCache.set(t,r);return r}const scoreText=t.includes('|')?t.split('|')[0].trim():t;const rows=[];for(const[f,w]of Object.entries(ROLE_FAMILIES)){const s=_phrasesPresent(scoreText,w);if(s>0)rows.push([f,s])}if(!rows.length){_famCache.set(t,[]);return[]}rows.sort((a,b)=>b[1]-a[1]);const top=rows[0][1];const r=rows.filter(([,s],i)=>i===0||(i===1&&s*2>=top)).map(([f])=>f);_famCache.set(t,r);return r}
+function inferSeniority(t){const n=_normalize(t);for(const[phrase,band]of _SENIORITY_PHRASE_OVERRIDES){if(n.includes(phrase))return band}const wds=n.split(/\s+/);for(const band of['exec','lead','senior','junior']){for(const w of SENIORITY[band]){if(w.includes(' ')?n.includes(w):wds.includes(w))return band}}return'mid'}
+function _securityOverlap(t){const toks=_tokens(t),n=_normalize(t);for(const h of SECURITY_HINTS){if(h.includes(' ')?n.includes(h):toks.has(h))return true}return false}
+function _adjacentFamily(a,b){return _ADJACENT.some(g=>g.has(a)&&g.has(b))}
+function scoreMatch(conn,job){const reasons=[];let score=0;const connFams=famTop2(conn.title);const jobFams=famTop2(job.title);let jobFam=jobFams[0]||null;if(jobFam==='software'&&jobFams.length>1&&_SPECIFIC_FAMS.has(jobFams[1]))jobFam=jobFams[1];const sameFam=Boolean(jobFam&&connFams.includes(jobFam));const adjMatch=!sameFam&&Boolean(jobFam)&&connFams.some(c=>_adjacentFamily(c,jobFam));if(sameFam){score+=48;reasons.push(`same function: ${jobFam.replace(/_/g,' ')}`)}else if(adjMatch){score+=22;reasons.push(`adjacent: ${connFams[0].replace(/_/g,' ')} ≈ ${jobFam.replace(/_/g,' ')}`)}if(sameFam||adjMatch){const connToks=_tokens(conn.title),jobToks=_tokens(job.title);const overlap=[...connToks].filter(t=>jobToks.has(t));if(overlap.length){score+=Math.min(22,8*overlap.length);reasons.push('shared: '+[...overlap].sort().join(', '))}}const cs=inferSeniority(conn.title),js=inferSeniority(job.title);const csIdx=SENIORITY_ORDER.indexOf(cs),jsIdx=SENIORITY_ORDER.indexOf(js);const dist=Math.abs(csIdx-jsIdx),below=csIdx<jsIdx;if(dist===0){score+=13;reasons.push(`seniority fit: ${js}`)}else if(dist===1){if(js==='exec'&&jobFam==='ae_exec'&&cs==='lead'){}else if(below)score+=8;else score+=4;reasons.push(`near seniority: ${cs}→${js}`)}else if(dist===2){if(!below)score-=20;reasons.push(below?`near seniority: ${cs}→${js}`:`seniority gap: ${cs}→${js}`)}else{score-=35;reasons.push(`seniority gap: ${cs}→${js}`)}if(_securityOverlap(conn.title)&&(_securityOverlap(job.title)||jobFam==='security_eng')){score+=10;reasons.push('works in security/cyber')}return{score:Math.min(150,Math.round(score)),reasons}}
+
+// ═══════════════════════════════════════════════════════════════════
+// SOURCING FILTERS
+// ═══════════════════════════════════════════════════════════════════
+const _CFO_TITLE_RE=/\b(cfo|chief financial officer|chief finance officer)\b|\b(directeur|directrice)\s+financi[eè]re?\b|\b(vp finance|vp of finance|head of finance|finance director|director of finance)\b/i;
+const _ACCOUNTING_CTX_RE=/\b(accounting|comptabilit[eé]|consolidation|tax|fiscal)\b/i;
+const _INTERIM_RE=/\b(interim|int[eé]rimaire|manager de transition|management de transition)\b/i;
+const _EXPERT_CPT_RE=/\bexpert[-\s]comptable\b/i;
+const _INHOUSE_RE=/\b(interne|intern[ao]|responsable|directeur|groupe)\b/i;
+function isCfoTitle(t){return _CFO_TITLE_RE.test(t)&&!_ACCOUNTING_CTX_RE.test(t)}
+function isInterim(t){return _INTERIM_RE.test(t)}
+function isExpertComptable(t){return _EXPERT_CPT_RE.test(t)&&!_INHOUSE_RE.test(t)}
+function passesFilters(c){if(settings.filterCFO&&isCfoTitle(c.title))return false;if(settings.filterInterim&&isInterim(c.title))return false;if(settings.filterExpertComptable&&isExpertComptable(c.title))return false;return true}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSV PARSER
+// ═══════════════════════════════════════════════════════════════════
+function parseCSVRow(line){const result=[];let inQ=false,cur='';for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++}else inQ=!inQ}else if(c===','&&!inQ){result.push(cur);cur=''}else cur+=c}result.push(cur);return result}
+function parseCSV(text){if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);const lines=text.split(/\r?\n/);if(!lines.length)return{headers:[],rows:[]};const headers=parseCSVRow(lines[0]).map(h=>h.trim());const rows=[];for(let i=1;i<lines.length;i++){if(!lines[i].trim())continue;const cols=parseCSVRow(lines[i]);const row={};headers.forEach((h,j)=>{row[h]=(cols[j]||'').trim()});rows.push(row)}return{headers,rows}}
+function detectFormat(headers){if(headers.includes('Full Name')||headers.includes('Job Title'))return'sourcing';if(headers.includes('First Name')&&headers.includes('Position'))return'connections';return'unknown'}
+function _splitTitleCompany(title,company){if(!company&&title.includes(' @ ')){const idx=title.lastIndexOf(' @ ');return{title:title.slice(0,idx).trim(),company:title.slice(idx+3).trim()}}return{title,company}}
+function rowToConnection(row,fmt){if(fmt==='sourcing'){const nm=row['Full Name']||'';const[fn,...rest]=nm.trim().split(' ');const rawTitle=row['Job Title']||'';const rawCompany=row['Current Company']||row['Company Domain']||row['Company']||'';const{title,company}=_splitTitleCompany(rawTitle,rawCompany);return{name:nm.trim(),firstName:fn||'',lastName:rest.join(' '),company,title,url:row['LinkedIn Profile']||''}}const rawTitle=row['Position']||'';const rawCompany=row['Company']||'';const{title,company}=_splitTitleCompany(rawTitle,rawCompany);return{name:`${row['First Name']||''} ${row['Last Name']||''}`.trim(),firstName:row['First Name']||'',lastName:row['Last Name']||'',company,title,url:row['URL']||''}}
+
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+const DEFAULT_JOBS=[{id:'hoa',title:'Head of Accounting, tax and consolidation'},{id:'swe',title:'Senior Software Engineer'},{id:'ae',title:'Enterprise Account Executive'},{id:'bdr',title:'Business Development Representative'},{id:'csm',title:'Customer Success Manager'},{id:'sec',title:'Senior Security Engineer'},{id:'pm',title:'Product Manager'}];
+const DEFAULT_SETTINGS={hotThreshold:65,filterCFO:true,filterInterim:true,filterExpertComptable:true};
+let jobs=[],settings={},decisions={},blockedTerms=[],hiddenPatterns=[],refineState={};
+let candidates=[],scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all';
+const PAGE_SIZE=30;
+let _prevScreen='upload';
+let _pendingFile=null;
+
+function loadState(){
+  try{decisions=JSON.parse(localStorage.getItem('coop_dec')||'{}')}catch(e){}
+  try{blockedTerms=JSON.parse(localStorage.getItem('coop_blk')||'[]')}catch(e){}
+  try{hiddenPatterns=JSON.parse(localStorage.getItem('coop_hpat')||'[]')}catch(e){}
+  try{refineState=JSON.parse(localStorage.getItem('coop_rqs')||'{}')}catch(e){}
+  try{jobs=JSON.parse(localStorage.getItem('coop_jobs')||'null')||[...DEFAULT_JOBS]}catch(e){jobs=[...DEFAULT_JOBS]}
+  try{const s=JSON.parse(localStorage.getItem('coop_settings')||'null');settings=s?{...DEFAULT_SETTINGS,...s}:{...DEFAULT_SETTINGS}}catch(e){settings={...DEFAULT_SETTINGS}}
+}
+function saveDec(){try{localStorage.setItem('coop_dec',JSON.stringify(decisions))}catch(e){}}
+function saveBlk(){try{localStorage.setItem('coop_blk',JSON.stringify(blockedTerms))}catch(e){}}
+function saveHPat(){try{localStorage.setItem('coop_hpat',JSON.stringify(hiddenPatterns))}catch(e){}}
+function saveRqs(){try{localStorage.setItem('coop_rqs',JSON.stringify(refineState))}catch(e){}}
+function saveJobs(){try{localStorage.setItem('coop_jobs',JSON.stringify(jobs))}catch(e){}}
+function saveSettings(){try{localStorage.setItem('coop_settings',JSON.stringify(settings))}catch(e){}}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCORING PIPELINE
+// ═══════════════════════════════════════════════════════════════════
+function scoreAll(newConns, merge) {
+  for (const job of jobs) {
+    const newScored = [];
+    for (const c of newConns) {
+      const m = scoreMatch(c, job);
+      if (m.score >= POSSIBLE && passesFilters(c)) newScored.push({...c, score:m.score, reasons:m.reasons});
+    }
+    if (merge) {
+      const existing = scoredByJob[job.id] || [];
+      const newKeys  = new Set(newScored.map(c => ckey(c)));
+      const kept     = existing.filter(c => !newKeys.has(ckey(c)));
+      const all      = [...newScored, ...kept];
+      all.sort((a,b) => b.score - a.score);
+      scoredByJob[job.id] = all;
+    } else {
+      newScored.sort((a,b) => b.score - a.score);
+      scoredByJob[job.id] = newScored;
+    }
+  }
+}
+function processCSV(text, merge = false) {
+  const parsed = parseCSV(text);
+  const fmt    = detectFormat(parsed.headers);
+  if (fmt === 'unknown') return 'Unknown CSV format. Use LinkedIn "Find People to Hire" or Connections export.';
+  const newConns = parsed.rows.map(r => rowToConnection(r, fmt)).filter(c => c.title || c.company);
+  if (merge) {
+    const existingKeys = new Set(candidates.map(c => ckey(c)));
+    const fresh = newConns.filter(c => !existingKeys.has(ckey(c)));
+    candidates = [...candidates, ...fresh];
+  } else {
+    candidates  = newConns;
+    scoredByJob = {};
+  }
+  scoreAll(newConns, merge);
+  return null;
+}
+function ckey(c){return c.name+'|'+c.company}
+function companyReputation(company){if(!company)return 0;let kept=0,skipped=0;for(const list of Object.values(scoredByJob)){for(const c of list){if(c.company!==company)continue;const d=decisions[ckey(c)];if(d==='kept')kept++;else if(d==='excl')skipped++}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
+function adjustedScore(c){return c.score+companyReputation(c.company)}
+
+// ═══════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings()}
+function settingsBack(){showScreen(_prevScreen)}
+let _toastTimer;
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>t.classList.add('hidden'),2500)}
+function isBlocked(co){const n=(co||'').toLowerCase();return blockedTerms.some(t=>n.includes(t.toLowerCase()))}
+function isTitleHidden(title){if(isCfoTitle(title)||(settings.filterInterim&&isInterim(title))||(settings.filterExpertComptable&&isExpertComptable(title)))return true;return hiddenPatterns.some(p=>new RegExp(p.regex,'i').test(title))}
+
+// ═══════════════════════════════════════════════════════════════════
+// UPLOAD SCREEN
+// ═══════════════════════════════════════════════════════════════════
+function initUpload(){
+  const zone=document.getElementById('drop-zone');
+  const inp=document.getElementById('file-input');
+  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('over')});
+  zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
+  zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('over');handleFile(e.dataTransfer.files[0])});
+  inp.addEventListener('change',()=>{handleFile(inp.files[0]);inp.value=''});
+  const decCount=Object.keys(decisions).length;
+  if(decCount>0){document.getElementById('upload-prev-msg').textContent=`${decCount} decision${decCount===1?'':'s'} saved — upload the same CSV to continue.`;document.getElementById('upload-prev').classList.remove('hidden')}
+}
+function handleFile(file){
+  if(!file)return;
+  document.getElementById('upload-error').style.display='none';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=e.target.result;
+    if(candidates.length>0){
+      _pendingFile=text;
+      const totalNew=parseCSV(text).rows.length;
+      document.getElementById('merge-sub').textContent=`You already have ${candidates.length} candidates loaded. Merge ${totalNew} new candidates into the existing list, or start fresh?`;
+      document.getElementById('merge-confirm').classList.remove('hidden');
+    } else {
+      applyCSV(text,false);
+    }
+  };
+  reader.readAsText(file,'utf-8');
+}
+function confirmMerge(merge){
+  document.getElementById('merge-confirm').classList.add('hidden');
+  if(_pendingFile)applyCSV(_pendingFile,merge);
+  _pendingFile=null;
+}
+function applyCSV(text,merge){
+  const err=document.getElementById('upload-error');
+  const error=processCSV(text,merge);
+  if(error){err.textContent=error;err.style.display='block';return}
+  renderPicker();
+  showScreen('picker');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PICKER
+// ═══════════════════════════════════════════════════════════════════
+function renderPicker(){
+  const ht=settings.hotThreshold;
+  document.getElementById('picker-sub').textContent=`${candidates.length} candidates · ${jobs.length} roles`;
+  document.getElementById('job-list').innerHTML=jobs.map(job=>{
+    const all=scoredByJob[job.id]||[];
+    const hot=all.filter(c=>c.score>=ht).length;
+    const warm=all.filter(c=>c.score>=POSSIBLE&&c.score<ht).length;
+    const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
+    const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
+    const noneB=!hot&&!warm?`<span class="count-badge count-zero">No matches</span>`:'';
+    return`<div class="job-card" onclick="openJob('${esc(job.id)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div><div class="job-card-counts">${hotB}${warmB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TRIAGE
+// ═══════════════════════════════════════════════════════════════════
+function openJob(jobId){currentJobId=jobId;currentPage=1;showWarm=false;decFilter='all';const job=jobs.find(j=>j.id===jobId);document.getElementById('triage-job-title').textContent=job?job.title:jobId;renderList();showScreen('triage')}
+function getCandidatesForJob(){return(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c))}
+function skippedCandidates(){return getCandidatesForJob().filter(c=>decisions[ckey(c)]==='excl')}
+
+function renderList(){
+  const ht=settings.hotThreshold;
+  const all=getCandidatesForJob();
+  const decided=all.filter(c=>decisions[ckey(c)]);
+  const undecided=all.filter(c=>!decisions[ckey(c)]);
+  undecided.sort((a,b)=>adjustedScore(b)-adjustedScore(a));
+  const pool=[...undecided,...decided];
+  const visible=pool.filter(c=>{
+    if(isBlocked(c.company))return false;
+    if(isTitleHidden(c.title))return false;
+    const d=decisions[ckey(c)]||'undet';
+    if(decFilter==='kept'&&d!=='kept')return false;
+    if(decFilter==='excl'&&d!=='excl')return false;
+    if(decFilter==='undet'&&d!=='undet')return false;
+    if(!showWarm&&c.score<ht)return false;
+    return true;
+  });
+  const totalPages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE));
+  if(currentPage>totalPages)currentPage=totalPages;
+  const pageSlice=visible.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
+  const hotCount=all.filter(c=>c.score>=ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const warmCount=all.filter(c=>c.score>=POSSIBLE&&c.score<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const keptCount=all.filter(c=>decisions[ckey(c)]==='kept').length;
+  const sklCount=all.filter(c=>decisions[ckey(c)]==='excl').length;
+  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped`;
+  const keptWithUrl=all.filter(c=>decisions[ckey(c)]==='kept'&&c.url);
+  const ctrlDec=(lbl,val)=>`<button class="ctrl-chip${decFilter===val?' active':''}" onclick="setDecFilter('${val}')">${lbl}</button>`;
+  document.getElementById('triage-controls').innerHTML=`
+    ${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Undecided','undet')}
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-chip${showWarm?' active':''}" onclick="toggleWarm()">Show WARM</button>
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-chip" onclick="openAllKept()"${keptWithUrl.length?'':' disabled'}>Open kept (${keptWithUrl.length})</button>
+    <button class="ctrl-chip" onclick="downloadKeptCSV()"${keptCount?'':' disabled'}>Download kept CSV</button>`;
+  document.getElementById('blocked-chips').innerHTML=blockedTerms.length
+    ?`<div class="blocked-chips">${blockedTerms.map(t=>`<span class="chip">${esc(t)}<span class="chip-x" onclick="unblock('${esc(t)}')">×</span></span>`).join('')}</div>`:'';
+  document.getElementById('cand-list').innerHTML=pageSlice.map(c=>{
+    const k=ckey(c);const dec=decisions[k]||'undet';const adj=adjustedScore(c);
+    const tier=adj>=ht?'hot':'warm';
+    const kA=dec==='kept'?' active':'';const xA=dec==='excl'?' active':'';
+    const liBtn=c.url?`<button class="btn-li" data-url="${esc(c.url)}" onclick="openLI(this.dataset.url)">LinkedIn ↗</button>`:'';
+    const rep=companyReputation(c.company);
+    const adjNote=rep!==0?` <span style="font-size:11px;color:var(--text-3)">(${rep>0?'+':''}${rep})</span>`:'';
+    return`<div class="cand-card${dec!=='undet'?' decided':''}">
+      <div class="cand-header">
+        <div class="cand-score score-${tier}">${adj}${adjNote}</div>
+        <div class="cand-meta">
+          <div class="cand-name">${esc(c.name)}</div>
+          <div class="cand-title">${esc(c.title)}</div>
+          <div class="cand-company">${esc(c.company)}</div>
+        </div>
+        <div class="cand-actions">${liBtn}<button class="btn-keep${kA}" onclick="decide('${esc(k)}','kept')">✓ Keep</button><button class="btn-skip${xA}" onclick="decide('${esc(k)}','excl')">✕ Skip</button></div>
+      </div>
+      <div class="cand-reasons">${c.reasons.map(r=>`<span class="reason-tag">${esc(r)}</span>`).join('')}</div>
+    </div>`;
+  }).join('')||`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No candidates match the current filters.</div>`;
+  document.getElementById('pager').innerHTML=totalPages>1
+    ?`<div class="pager"><button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Prev</button><span class="page-info">Page ${currentPage} of ${totalPages} · ${visible.length} total</span><button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>Next →</button></div>`:'';
+  updateRefineFab();
+}
+function goPage(n){currentPage=n;renderList();window.scrollTo(0,0)}
+function setDecFilter(f){decFilter=f;currentPage=1;renderList()}
+function toggleWarm(){showWarm=!showWarm;currentPage=1;renderList()}
+function decide(k,action){decisions[k]=decisions[k]===action?undefined:action;if(!decisions[k])delete decisions[k];saveDec();currentPage=1;renderList()}
+function unblock(term){blockedTerms=blockedTerms.filter(t=>t!==term);saveBlk();renderList()}
+
+// ═══════════════════════════════════════════════════════════════════
+// LINKEDIN / EXPORT
+// ═══════════════════════════════════════════════════════════════════
+function openLI(url){if(url)window.open(url,'_blank','noopener,noreferrer')}
+function openAllKept(){
+  const urls=getCandidatesForJob().filter(c=>decisions[ckey(c)]==='kept'&&c.url).map(c=>c.url);
+  if(!urls.length){showToast('No kept candidates with LinkedIn URLs');return}
+  if(urls.length>10&&!confirm(`Open ${urls.length} tabs?`))return;
+  urls.forEach(u=>window.open(u,'_blank','noopener,noreferrer'));
+}
+function downloadKeptCSV(){
+  const all=getCandidatesForJob();
+  const kept=all.filter(c=>decisions[ckey(c)]==='kept');
+  if(!kept.length){showToast('No kept candidates');return}
+  const job=jobs.find(j=>j.id===currentJobId);
+  const rows=[['Name','Title','Company','Score','LinkedIn','Reasons']];
+  kept.forEach(c=>rows.push([c.name,c.title,c.company,String(c.score),c.url,c.reasons.join(' | ')]));
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`kept-${(job?.title||currentJobId).replace(/[^a-z0-9]/gi,'-').toLowerCase()}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  showToast(`Downloaded ${kept.length} profiles`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SKIP PATTERN ANALYSIS
+// ═══════════════════════════════════════════════════════════════════
+function updateRefineFab(){const skips=skippedCandidates().length;document.getElementById('refine-skip-count').textContent=skips;document.getElementById('refine-fab').classList.toggle('hidden',skips<3)}
+function analyzeSkipPatterns(){
+  const skipped=skippedCandidates(),questions=[];
+  const coCount={};
+  skipped.forEach(c=>{if(!c.company)return;const dom=c.company.toLowerCase();const blockedByTerm=blockedTerms.some(t=>dom.includes(t.toLowerCase()));const hiddenByPat=hiddenPatterns.some(p=>new RegExp(p.regex,'i').test(c.company)||new RegExp(p.regex,'i').test(c.title));if(!blockedByTerm&&!hiddenByPat)coCount[c.company]=(coCount[c.company]||0)+1});
+  Object.entries(coCount).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).slice(0,4).forEach(([co,n])=>{questions.push({id:'co_'+co,html:`You skipped <strong>${n} people from <span class="pattern-tag">${esc(co)}</span></strong> — block this company entirely?`,yes:()=>{blockedTerms.push(co);saveBlk();renderList()}})});
+  const cfoSkips=skipped.filter(c=>isCfoTitle(c.title));
+  if(cfoSkips.length>=1){const sample=[...new Set(cfoSkips.map(c=>c.title))].slice(0,3);questions.push({id:'pat_cfo',html:`<strong>${cfoSkips.length} skipped</strong> have CFO / Finance Director titles ${sample.map(t=>`<span class="pattern-tag">${esc(t)}</span>`).join(' ')} — auto-filtered. Mark as seen?`,yesLabel:'Got it',noLabel:'Close',yes:()=>{}})}
+  const SECTORS=[{regex:'\\b(banque|banking|crédit|credit agricole|bpce|bpi|natixis|société générale|bnp)\\b',label:'Banking sector'},{regex:'\\b(assurance|insurance|axa|allianz|mma|maif|matmut|groupama)\\b',label:'Insurance sector'},{regex:'\\b(immobilier|real estate|foncière|scpi)\\b',label:'Real estate / property'}];
+  SECTORS.forEach(pat=>{const re=new RegExp(pat.regex,'i');const ms=skipped.filter(c=>re.test(c.company)||re.test(c.title));const already=hiddenPatterns.some(p=>p.regex===pat.regex);if(ms.length>=2&&!already)questions.push({id:'pat_'+pat.label,html:`<strong>${ms.length} skipped</strong> are in <strong>${pat.label}</strong> — filter this sector?`,yes:()=>{hiddenPatterns.push({label:pat.label,regex:pat.regex});saveHPat();renderList()}})});
+  const intSkips=skipped.filter(c=>isInterim(c.title));
+  const intHidden=hiddenPatterns.some(p=>p.regex.includes('interim'));
+  if(intSkips.length>=1&&!intHidden)questions.push({id:'pat_interim',html:`<strong>${intSkips.length} skipped</strong> are interim / managers de transition — filter them?`,yes:()=>{hiddenPatterns.push({label:'Interim / freelance',regex:'\\b(interim|interimaire|freelance|consultant indépendant)\\b'});saveHPat();renderList()}});
+  return questions;
+}
+let __refineActions={};
+function showRefine(){const questions=analyzeSkipPatterns();document.getElementById('refine-sub').textContent=`${skippedCandidates().length} skipped · ${questions.length} pattern${questions.length===1?'':'s'} detected`;document.getElementById('refine-questions').innerHTML=questions.length?questions.map(q=>{const resolved=refineState[q.id]==='resolved';return`<div class="refine-q${resolved?' resolved':''}" id="rq_${q.id.replace(/[^a-z0-9]/gi,'_')}"><div class="refine-q-lbl">${q.html}</div>${!resolved?`<div class="refine-choices"><button class="refine-yes" onclick="applyRefine('${esc(q.id)}')">${q.yesLabel||'Yes, apply'}</button><button class="refine-no" onclick="dismissRefine('${esc(q.id)}')">${q.noLabel||'No, skip'}</button></div>`:''}</div>`}).join(''):`<div class="lists-empty">No clear patterns yet.</div>`;__refineActions={};questions.forEach(q=>{__refineActions[q.id]=q.yes});document.getElementById('overlay-refine').classList.remove('hidden')}
+function applyRefine(id){if(__refineActions[id])__refineActions[id]();refineState[id]='resolved';saveRqs();const el=document.getElementById('rq_'+id.replace(/[^a-z0-9]/gi,'_'));if(el){el.classList.add('resolved');el.querySelector('.refine-choices')?.remove()}showToast('Applied')}
+function dismissRefine(id){refineState[id]='resolved';saveRqs();const el=document.getElementById('rq_'+id.replace(/[^a-z0-9]/gi,'_'));if(el){el.classList.add('resolved');el.querySelector('.refine-choices')?.remove()}}
+function hideRefine(){document.getElementById('overlay-refine').classList.add('hidden')}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPANY LISTS
+// ═══════════════════════════════════════════════════════════════════
+function showLists(){
+  const source={},avoid={};
+  for(const list of Object.values(scoredByJob)){for(const c of list){if(!c.company)continue;const d=decisions[ckey(c)];if(d==='kept')source[c.company]=(source[c.company]||0)+1;else if(d==='excl')avoid[c.company]=(avoid[c.company]||0)+1}}
+  const sortedSrc=Object.entries(source).sort((a,b)=>b[1]-a[1]);
+  const sortedAvoid=Object.entries(avoid).sort((a,b)=>b[1]-a[1]);
+  const listHtml=(entries,label)=>entries.length?entries.map(([co,n])=>`<div class="company-row"><span class="company-name">${esc(co)}</span><span class="company-count">${n}</span></div>`).join(''):`<div class="lists-empty">No ${label} yet</div>`;
+  const srcStr=sortedSrc.map(([co])=>co).join(', ');
+  const avoidStr=sortedAvoid.map(([co])=>co).join(', ');
+  document.getElementById('lists-content').innerHTML=`<div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Source from<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(srcStr)}').then(()=>showToast('Copied'))">Copy</button></div>${listHtml(sortedSrc,'kept companies')}</div><div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Avoid<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(avoidStr)}').then(()=>showToast('Copied'))">Copy</button></div>${listHtml(sortedAvoid,'skipped companies')}</div>`;
+  document.getElementById('overlay-lists').classList.remove('hidden');
+}
+function hideLists(){document.getElementById('overlay-lists').classList.add('hidden')}
+
+// ═══════════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════════
+function renderSettings(){document.getElementById('thresh-slider').value=settings.hotThreshold;document.getElementById('thresh-val').textContent=settings.hotThreshold;document.getElementById('tog-cfo').checked=settings.filterCFO;document.getElementById('tog-interim').checked=settings.filterInterim;document.getElementById('tog-ec').checked=settings.filterExpertComptable;renderJobsList()}
+function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.map(j=>`<div class="job-item"><span class="job-item-title">${esc(j.title)}</span><button class="btn-del" onclick="removeJob('${esc(j.id)}')" title="Remove">×</button></div>`).join('')}
+function updateThreshold(v){settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings()}
+function updateFilter(key,val){settings[key]=val;saveSettings()}
+function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const id='custom_'+Date.now().toString(36);jobs.push({id,title});saveJobs();inp.value='';renderJobsList();if(candidates.length){const newScored=[];for(const c of candidates){const m=scoreMatch(c,{id,title});if(m.score>=POSSIBLE&&passesFilters(c))newScored.push({...c,score:m.score,reasons:m.reasons})}newScored.sort((a,b)=>b.score-a.score);scoredByJob[id]=newScored}showToast('Role added')}
+function removeJob(id){jobs=jobs.filter(j=>j.id!==id);delete scoredByJob[id];saveJobs();renderJobsList()}
+function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};saveDec();showToast('Decisions cleared')}
+function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();saveHPat();showToast('Blocks cleared')}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+loadState();
+initUpload();
+</script>
+</html>
