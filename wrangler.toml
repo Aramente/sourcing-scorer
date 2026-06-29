@@ -1,0 +1,22 @@
+name = "sourcing-scorer"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sourcing-scorer"
+database_id = "e0a654e3-eef5-412d-826e-449618e3aeb3"
+
+[vars]
+USER1_ID = "kevin"
+USER1_NAME = "Kevin"
+USER2_ID = "user2"
+USER2_NAME = "User 2"
+USER3_ID = "user3"
+USER3_NAME = "User 3"
+USER4_ID = "user4"
+USER4_NAME = "User 4"
