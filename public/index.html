@@ -174,7 +174,17 @@ body{min-height:100vh}
 .lists-empty{font-size:13px;color:var(--text-3);text-align:center;padding:20px 0}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
 .toast.hidden{opacity:0}
+/* ── USER BANNER ── */
+#user-banner{position:fixed;top:0;right:0;z-index:1000;padding:6px 14px;display:flex;align-items:center;gap:10px;font-size:12px;color:#94A3B8}
+#user-banner form{margin:0}
+#user-banner button{font:inherit;font-size:12px;color:#94A3B8;background:none;border:none;cursor:pointer;padding:0}
+#user-banner button:hover{color:#1D4ED8}
 </style>
+
+<div id="user-banner">
+  <span id="user-display"></span>
+  <form action="/api/auth/logout" method="post"><button type="submit">Sign out</button></form>
+</div>
 
 <!-- UPLOAD -->
 <div id="screen-upload" class="screen active">
@@ -417,20 +427,29 @@ const PAGE_SIZE=30;
 let _prevScreen='upload';
 let _pendingFile=null;
 
-function loadState(){
-  try{decisions=JSON.parse(localStorage.getItem('coop_dec')||'{}')}catch(e){}
-  try{blockedTerms=JSON.parse(localStorage.getItem('coop_blk')||'[]')}catch(e){}
-  try{hiddenPatterns=JSON.parse(localStorage.getItem('coop_hpat')||'[]')}catch(e){}
-  try{refineState=JSON.parse(localStorage.getItem('coop_rqs')||'{}')}catch(e){}
-  try{jobs=JSON.parse(localStorage.getItem('coop_jobs')||'null')||[...DEFAULT_JOBS]}catch(e){jobs=[...DEFAULT_JOBS]}
-  try{const s=JSON.parse(localStorage.getItem('coop_settings')||'null');settings=s?{...DEFAULT_SETTINGS,...s}:{...DEFAULT_SETTINGS}}catch(e){settings={...DEFAULT_SETTINGS}}
+async function loadState(){
+  const [dec,blk,rqs,jobsData,settingsData,me]=await Promise.all([
+    fetch('/api/decisions').then(r=>r.json()),
+    fetch('/api/blocks').then(r=>r.json()),
+    fetch('/api/refine').then(r=>r.json()),
+    fetch('/api/jobs').then(r=>r.json()),
+    fetch('/api/settings').then(r=>r.json()),
+    fetch('/api/me').then(r=>r.json()),
+  ]);
+  decisions=dec;
+  blockedTerms=blk.terms||[];
+  hiddenPatterns=blk.patterns||[];
+  refineState=rqs;
+  jobs=Array.isArray(jobsData)&&jobsData.length?jobsData:[...DEFAULT_JOBS];
+  settings={...DEFAULT_SETTINGS,...settingsData};
+  const el=document.getElementById('user-display');
+  if(el)el.textContent=me.name||me.id||'';
 }
-function saveDec(){try{localStorage.setItem('coop_dec',JSON.stringify(decisions))}catch(e){}}
-function saveBlk(){try{localStorage.setItem('coop_blk',JSON.stringify(blockedTerms))}catch(e){}}
-function saveHPat(){try{localStorage.setItem('coop_hpat',JSON.stringify(hiddenPatterns))}catch(e){}}
-function saveRqs(){try{localStorage.setItem('coop_rqs',JSON.stringify(refineState))}catch(e){}}
-function saveJobs(){try{localStorage.setItem('coop_jobs',JSON.stringify(jobs))}catch(e){}}
-function saveSettings(){try{localStorage.setItem('coop_settings',JSON.stringify(settings))}catch(e){}}
+function saveDec(key,action){fetch('/api/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,action:action||null})})}
+function saveBlk(){fetch('/api/blocks',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({terms:blockedTerms,patterns:hiddenPatterns})})}
+function saveHPat(){saveBlk()}
+function saveRqs(){fetch('/api/refine',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(refineState)})}
+function saveSettings(){fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)})}
 
 // ═══════════════════════════════════════════════════════════════════
 // SCORING PIPELINE
@@ -616,7 +635,7 @@ function renderList(){
 function goPage(n){currentPage=n;renderList();window.scrollTo(0,0)}
 function setDecFilter(f){decFilter=f;currentPage=1;renderList()}
 function toggleWarm(){showWarm=!showWarm;currentPage=1;renderList()}
-function decide(k,action){decisions[k]=decisions[k]===action?undefined:action;if(!decisions[k])delete decisions[k];saveDec();currentPage=1;renderList()}
+function decide(k,action){const prev=decisions[k];decisions[k]=prev===action?undefined:action;if(!decisions[k])delete decisions[k];saveDec(k,decisions[k]||null);currentPage=1;renderList()}
 function unblock(term){blockedTerms=blockedTerms.filter(t=>t!==term);saveBlk();renderList()}
 
 // ═══════════════════════════════════════════════════════════════════
@@ -693,15 +712,14 @@ function renderSettings(){document.getElementById('thresh-slider').value=setting
 function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.map(j=>`<div class="job-item"><span class="job-item-title">${esc(j.title)}</span><button class="btn-del" onclick="removeJob('${esc(j.id)}')" title="Remove">×</button></div>`).join('')}
 function updateThreshold(v){settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings()}
 function updateFilter(key,val){settings[key]=val;saveSettings()}
-function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const id='custom_'+Date.now().toString(36);jobs.push({id,title});saveJobs();inp.value='';renderJobsList();if(candidates.length){const newScored=[];for(const c of candidates){const m=scoreMatch(c,{id,title});if(m.score>=POSSIBLE&&passesFilters(c))newScored.push({...c,score:m.score,reasons:m.reasons})}newScored.sort((a,b)=>b.score-a.score);scoredByJob[id]=newScored}showToast('Role added')}
-function removeJob(id){jobs=jobs.filter(j=>j.id!==id);delete scoredByJob[id];saveJobs();renderJobsList()}
-function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};saveDec();showToast('Decisions cleared')}
-function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();saveHPat();showToast('Blocks cleared')}
+async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const {id}=await res.json();jobs.push({id,title});inp.value='';renderJobsList();if(candidates.length){const newScored=[];for(const c of candidates){const m=scoreMatch(c,{id,title});if(m.score>=POSSIBLE&&passesFilters(c))newScored.push({...c,score:m.score,reasons:m.reasons})}newScored.sort((a,b)=>b.score-a.score);scoredByJob[id]=newScored}showToast('Role added')}
+async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);delete scoredByJob[id];await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
+async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};await fetch('/api/decisions',{method:'DELETE'});showToast('Decisions cleared')}
+async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
 
 // ═══════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════
-loadState();
-initUpload();
+loadState().then(()=>initUpload());
 </script>
 </html>
