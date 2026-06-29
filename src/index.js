@@ -41,7 +41,7 @@ async function getSession(request, env) {
 }
 
 function setCookie(token, clear) {
-  return `${SESSION_NAME}=${token||''}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${clear?0:SESSION_MS/1000}`;
+  return `${SESSION_NAME}=${token||''}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${clear?0:SESSION_MS/1000}`;
 }
 
 // ── user seeding ──────────────────────────────────────────────────
@@ -79,9 +79,9 @@ async function handleLogin(request, env) {
   });
 }
 
-function handleLogout(request, env) {
+async function handleLogout(request, env) {
   const token = getToken(request);
-  if (token) env.DB.prepare('DELETE FROM sessions WHERE token=?').bind(token).run();
+  if (token) await env.DB.prepare('DELETE FROM sessions WHERE token=?').bind(token).run();
   return new Response(null, {status:302, headers:{Location:'/', 'Set-Cookie':setCookie('',true)}});
 }
 
@@ -243,7 +243,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname==='/api/auth/login' && request.method==='POST') return handleLogin(request, env);
-    if (url.pathname==='/api/auth/logout') return handleLogout(request, env);
+    if (url.pathname==='/api/auth/logout') return await handleLogout(request, env);
 
     const session = await getSession(request, env);
 
