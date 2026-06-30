@@ -541,6 +541,12 @@ async function applyCSV(text){
 // ═══════════════════════════════════════════════════════════════════
 function renderPicker(){
   const ht=settings.hotThreshold;
+  if(allJobs.length===0){
+    document.getElementById('picker-sub').textContent='Get started by adding your first role';
+    document.getElementById('job-list').innerHTML=`<div style="text-align:center;padding:48px 24px;border:2px dashed var(--border);border-radius:12px;background:var(--surface)"><div style="font-size:36px;margin-bottom:14px">📋</div><div style="font-size:18px;font-weight:700;margin-bottom:6px">No roles yet</div><div style="font-size:14px;color:var(--text-2);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto">Create a role, then click it to drop a LinkedIn CSV and start triaging.</div><div style="display:flex;gap:8px;max-width:380px;margin:0 auto 28px"><input class="add-job-input" type="text" id="empty-job-input" placeholder="e.g. Senior Software Engineer" style="flex:1" onkeydown="if(event.key==='Enter')addJobFromEmpty()"><button class="btn-add" onclick="addJobFromEmpty()">Add role</button></div><div style="display:flex;gap:0;justify-content:center;border-top:1px solid var(--border);padding-top:20px"><div style="flex:1;padding:0 16px;border-right:1px solid var(--border)"><div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);margin-bottom:4px">Step 1</div><div style="font-size:13px;color:var(--text-2)">Type a role name &amp; click Add</div></div><div style="flex:1;padding:0 16px;border-right:1px solid var(--border)"><div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);margin-bottom:4px">Step 2</div><div style="font-size:13px;color:var(--text-2)">Click the role card</div></div><div style="flex:1;padding:0 16px"><div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);margin-bottom:4px">Step 3</div><div style="font-size:13px;color:var(--text-2)">Drop your LinkedIn CSV</div></div></div></div>`;
+    setTimeout(()=>{const inp=document.getElementById('empty-job-input');if(inp)inp.focus()},50);
+    return;
+  }
   document.getElementById('picker-sub').textContent=`${allJobs.length} open role${allJobs.length===1?'':'s'}`;
   const card=job=>{
     const jid=job.id;
@@ -551,7 +557,7 @@ function renderPicker(){
     const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
     const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
     const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
-    const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">No candidates yet</span>`:'';
+    const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">No candidates yet — drop a CSV</span>`:'';
     const meta=job.live&&job.department?`<div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(job.department)}${job.locations&&job.locations.length?' · '+job.locations.slice(0,2).map(esc).join(', '):''}</div>`:'';
     return`<div class="job-card" onclick="openJob('${esc(jid)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div>${meta}<div class="job-card-counts">${hotB}${warmB}${totalB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
   };
@@ -561,6 +567,7 @@ function renderPicker(){
     liveSec+liveJobs.map(j=>card({...j,live:true})).join('')+
     custSec+customJobs.map(j=>card({...j,live:false})).join('');
 }
+async function addJobFromEmpty(){const inp=document.getElementById('empty-job-input');if(!inp)return;const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const{id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderPicker();renderJobsList();showToast('Role added — now click it to drop your CSV')}
 
 // ═══════════════════════════════════════════════════════════════════
 // TRIAGE
