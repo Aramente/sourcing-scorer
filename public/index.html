@@ -500,9 +500,8 @@ async function applyCSV(text){
   const res=await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave})});
   if(!res.ok){errEl.textContent='Failed to save candidates.';errEl.style.display='block';return}
   const {count}=await res.json();
-  const fresh=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>r.json()).catch(()=>[]);
-  scoredByJob[currentJobId]=Array.isArray(fresh)?fresh:[];
-  candidateCounts[currentJobId]=scoredByJob[currentJobId].length;
+  const fresh=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>r.json()).catch(()=>null);
+  if(Array.isArray(fresh)){scoredByJob[currentJobId]=fresh;candidateCounts[currentJobId]=fresh.length;}
   showToast(`Saved ${count} candidates`);
   renderList();
 }
@@ -696,6 +695,7 @@ async function clearCandidates(){
   scoredByJob[currentJobId]=[];
   candidateCounts[currentJobId]=0;
   renderList();
+  renderPicker();
   showToast('Candidates cleared');
 }
 
