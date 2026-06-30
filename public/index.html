@@ -542,10 +542,10 @@ async function applyCSV(text){
 function renderPicker(){
   const ht=settings.hotThreshold;
   if(allJobs.length===0){
-    document.getElementById('picker-sub').textContent='Pick a role to start sourcing';
-    document.getElementById('job-list').innerHTML=`<div style="border:1.5px solid var(--border);border-radius:12px;overflow:hidden;background:var(--white)"><div style="padding:16px 16px 12px;border-bottom:1px solid var(--border);background:var(--surface)"><div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:8px">GitGuardian open roles</div><input class="add-job-input" type="text" id="live-job-search" placeholder="Filter roles…" style="width:100%;box-sizing:border-box" oninput="filterEmptyJobs()"></div><div id="empty-live-list" style="max-height:340px;overflow-y:auto"><div style="padding:24px;text-align:center;color:var(--text-3);font-size:13px">Loading roles…</div></div></div><div style="display:flex;align-items:center;gap:12px;margin:16px 0"><div style="flex:1;height:1px;background:var(--border)"></div><div style="font-size:12px;color:var(--text-3);white-space:nowrap">or add a custom role</div><div style="flex:1;height:1px;background:var(--border)"></div></div><div style="display:flex;gap:8px"><input class="add-job-input" type="text" id="empty-job-input" placeholder="e.g. Head of Growth" style="flex:1" onkeydown="if(event.key==='Enter')addJobFromEmpty()"><button class="btn-add" onclick="addJobFromEmpty()">Add</button></div>`;
+    document.getElementById('picker-sub').textContent='Get started by adding your first role';
+    document.getElementById('job-list').innerHTML=`<div style="text-align:center;padding:48px 24px;border:2px dashed var(--border);border-radius:12px;background:var(--surface)"><div style="font-size:36px;margin-bottom:14px">📋</div><div style="font-size:18px;font-weight:700;margin-bottom:6px">No roles yet</div><div style="font-size:14px;color:var(--text-2);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto">Type a GitGuardian role name — suggestions will appear as you type.</div><div style="display:flex;gap:8px;max-width:380px;margin:0 auto"><input class="add-job-input" type="text" id="empty-job-input" list="gg-jobs-list" placeholder="e.g. Security Engineer" style="flex:1" onkeydown="if(event.key==='Enter')addJobFromEmpty()" oninput="onEmptyJobInput(this.value)"><datalist id="gg-jobs-list"></datalist><button class="btn-add" onclick="addJobFromEmpty()">Add</button></div></div>`;
     loadEmptyLiveJobs();
-    setTimeout(()=>{const inp=document.getElementById('live-job-search');if(inp)inp.focus()},50);
+    setTimeout(()=>{const inp=document.getElementById('empty-job-input');if(inp)inp.focus()},50);
     return;
   }
   document.getElementById('picker-sub').textContent=`${allJobs.length} open role${allJobs.length===1?'':'s'}`;
@@ -574,10 +574,13 @@ async function loadEmptyLiveJobs(){
   let list=liveJobs.length?liveJobs:null;
   if(!list){try{const d=await fetch('/api/jobs/live').then(r=>r.json());list=Array.isArray(d)?d:[];}catch{list=[]}}
   _emptyLiveCache=list;
-  renderEmptyLiveList(list);
+  const dl=document.getElementById('gg-jobs-list');
+  if(dl)dl.innerHTML=list.map(j=>`<option value="${esc(j.title)}">`).join('');
 }
-function filterEmptyJobs(){const q=(document.getElementById('live-job-search')?.value||'').toLowerCase();renderEmptyLiveList(q?_emptyLiveCache.filter(j=>j.title.toLowerCase().includes(q)):_emptyLiveCache)}
-function renderEmptyLiveList(list){const el=document.getElementById('empty-live-list');if(!el)return;if(!list.length){el.innerHTML='<div style="padding:24px;text-align:center;color:var(--text-3);font-size:13px">No roles found</div>';return}el.innerHTML=list.map(j=>`<div onclick="openJob('${esc(j.id)}')" style="padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''"><span style="font-size:14px;font-weight:500">${esc(j.title)}</span><span style="font-size:12px;color:var(--blue);flex-shrink:0;margin-left:12px">Start →</span></div>`).join('')}
+function onEmptyJobInput(val){
+  const match=_emptyLiveCache.find(j=>j.title===val);
+  if(match)openJob(match.id);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // TRIAGE
