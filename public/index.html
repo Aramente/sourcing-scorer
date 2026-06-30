@@ -525,7 +525,7 @@ function adjustedScore(c){return c.score+companyReputation(c.company)+companyPre
 // ═══════════════════════════════════════════════════════════════════
 // UI HELPERS
 // ═══════════════════════════════════════════════════════════════════
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings()}
 function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')renderList()}
 let _toastTimer;
