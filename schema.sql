@@ -52,3 +52,18 @@ CREATE TABLE IF NOT EXISTS refine_state (
   question_id TEXT NOT NULL,
   PRIMARY KEY (user_id, question_id)
 );
+
+CREATE TABLE IF NOT EXISTS candidates (
+  user_id TEXT NOT NULL,
+  job_id TEXT NOT NULL,
+  dedup_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  first_name TEXT NOT NULL DEFAULT '',
+  last_name TEXT NOT NULL DEFAULT '',
+  company TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL,
+  linkedin_url TEXT NOT NULL DEFAULT '',
+  score INTEGER NOT NULL,
+  reasons TEXT NOT NULL DEFAULT '[]',
+  PRIMARY KEY (user_id, job_id, dedup_key)
+);
