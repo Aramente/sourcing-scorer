@@ -137,11 +137,13 @@ async function handleAPI(request, url, session, env) {
   }
 
   if (path==='/api/candidates/counts' && method==='GET') {
+    const s = await env.DB.prepare('SELECT hot_threshold FROM user_settings WHERE user_id=?').bind(uid).first();
+    const ht = s?.hot_threshold ?? 65;
     const rows = await env.DB.prepare(
-      'SELECT job_id, COUNT(*) as n FROM candidates WHERE user_id=? GROUP BY job_id'
-    ).bind(uid).all();
+      'SELECT job_id, COUNT(*) as total, SUM(CASE WHEN score>=? THEN 1 ELSE 0 END) as hot, SUM(CASE WHEN score>=40 AND score<? THEN 1 ELSE 0 END) as warm FROM candidates WHERE user_id=? GROUP BY job_id'
+    ).bind(ht, ht, uid).all();
     const counts = {};
-    rows.results.forEach(r => { counts[r.job_id] = r.n; });
+    rows.results.forEach(r => { counts[r.job_id] = {total:r.total, hot:r.hot||0, warm:r.warm||0}; });
     return ok(counts);
   }
 
@@ -220,7 +222,7 @@ async function handleAPI(request, url, session, env) {
     const cands = await env.DB.prepare(
       'SELECT name,company,title,linkedin_url,score,reasons FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
     ).bind(uid, jobId).all();
-    const kept = cands.results.filter(c => keptSet.has(`${c.name}|${c.company}`));
+    const kept = cands.results.filter(c => keptSet.has(`${jobId}::${c.name}|${c.company}`) || keptSet.has(`${c.name}|${c.company}`));
     const rows = [['Name','Title','Company','Score','LinkedIn','Reasons']];
     kept.forEach(c => rows.push([
       c.name, c.title, c.company, String(c.score), c.linkedin_url,
