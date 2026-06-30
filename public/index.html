@@ -434,6 +434,7 @@ function parseCSV(text){
 function detectFormat(headers){
   if(headers.includes('Full Name')||headers.includes('Job Title')||headers.includes('Nom complet')||headers.includes('Intitulé du poste'))return'sourcing';
   if((headers.includes('First Name')||headers.includes('Prénom'))&&(headers.includes('Position')||headers.includes('Poste')))return'connections';
+  if(headers.includes('LinkedIn profile URL')||(headers.includes('Name')&&headers.includes('Job')&&headers.includes('Headline')))return'phantombuster';
   return'unknown';
 }
 function _splitTitleCompany(title,company){if(!company&&title.includes(' @ ')){const idx=title.lastIndexOf(' @ ');return{title:title.slice(0,idx).trim(),company:title.slice(idx+3).trim()}}return{title,company}}
@@ -444,6 +445,12 @@ function rowToConnection(row,fmt){
     const rawCompany=row['Current Company']||row['Entreprise actuelle']||row['Company Domain']||row['Company']||row['Entreprise']||'';
     const{title,company}=_splitTitleCompany(rawTitle,rawCompany);
     return{name:nm.trim(),firstName:fn||'',lastName:rest.join(' '),company,title,url:row['LinkedIn Profile']||row['Profil LinkedIn']||''}
+  }
+  if(fmt==='phantombuster'){
+    const nm=(row['Name']||'').trim();const[fn,...rest]=nm.split(' ');
+    const title=row['Job']||row['Headline']||'';
+    const company=row['Company']||'';
+    return{name:nm,firstName:fn||'',lastName:rest.join(' '),company,title,url:row['LinkedIn profile URL']||row['LinkedIn Sales Nav URL']||''}
   }
   const rawTitle=row['Position']||row['Poste']||'';
   const rawCompany=row['Company']||row['Entreprise']||row['Société']||'';
@@ -550,7 +557,7 @@ async function applyCSV(text){
   const errEl=document.getElementById('upload-error');
   const parsed=parseCSV(text);
   const fmt=detectFormat(parsed.headers);
-  if(fmt==='unknown'){errEl.textContent='Unknown CSV format. Use LinkedIn "Find People to Hire" or Connections export.';errEl.style.display='block';return}
+  if(fmt==='unknown'){errEl.textContent='Unknown CSV format. Supported: LinkedIn "Find People to Hire", Connections export, or PhantomBuster Sales Navigator export.';errEl.style.display='block';return}
   const job=allJobs.find(j=>j.id===currentJobId);
   if(!job){errEl.textContent='No job selected.';errEl.style.display='block';return}
   const newConns=parsed.rows.map(r=>rowToConnection(r,fmt)).filter(c=>c.title||c.company);
