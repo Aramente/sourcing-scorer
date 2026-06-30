@@ -186,43 +186,8 @@ body{min-height:100vh}
   <form action="/api/auth/logout" method="post"><button type="submit">Sign out</button></form>
 </div>
 
-<!-- UPLOAD -->
-<div id="screen-upload" class="screen active">
-  <div id="upload-wrap" style="max-width:520px;margin:0 auto;padding:72px 24px 80px">
-    <div class="upload-eyebrow">GitGuardian Recruiting</div>
-    <h1 class="upload-title">Sourcing Scorer</h1>
-    <p class="upload-sub">Upload a LinkedIn CSV to score and triage candidates against open roles.</p>
-    <div class="drop-zone" id="drop-zone">
-      <div class="drop-icon">⬆</div>
-      <div class="drop-label">Drop your CSV here, or <span class="drop-link">click to browse</span></div>
-      <div class="drop-hint" style="margin-top:6px">LinkedIn → "Find People to Hire" → Export CSV</div>
-      <input type="file" id="file-input" accept=".csv,.txt">
-    </div>
-    <div class="upload-error" id="upload-error"></div>
-    <div class="upload-prev hidden" id="upload-prev">
-      <span id="upload-prev-msg"></span>
-      <button class="btn-ghost" onclick="showScreen('settings')">⚙ Edit jobs &amp; settings</button>
-    </div>
-    <div class="upload-footer">
-      <button class="btn-ghost" onclick="showScreen('settings')">⚙ Settings &amp; Jobs</button>
-    </div>
-  </div>
-</div>
-
-<!-- Merge confirm modal -->
-<div class="merge-confirm hidden" id="merge-confirm">
-  <div class="merge-box">
-    <div class="merge-title">New CSV detected</div>
-    <div class="merge-sub" id="merge-sub"></div>
-    <div class="merge-actions">
-      <button class="btn-merge" onclick="confirmMerge(true)">Merge — add to existing</button>
-      <button class="btn-replace" onclick="confirmMerge(false)">Replace — start fresh</button>
-    </div>
-  </div>
-</div>
-
 <!-- PICKER -->
-<div id="screen-picker" class="screen">
+<div id="screen-picker" class="screen active">
   <div style="max-width:680px;margin:0 auto;padding:48px 24px 80px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
       <div>
@@ -230,10 +195,7 @@ body{min-height:100vh}
         <h1 class="picker-title">Choose a role to triage</h1>
         <p class="picker-sub" id="picker-sub"></p>
       </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        <button class="btn-ghost" onclick="initUpload();showScreen('upload')">↑ New CSV</button>
-        <button class="btn-ghost" onclick="showScreen('settings')">⚙ Settings</button>
-      </div>
+      <button class="btn-ghost" onclick="showScreen('settings')">⚙ Settings</button>
     </div>
     <div id="job-list"></div>
   </div>
@@ -246,6 +208,15 @@ body{min-height:100vh}
     <div class="triage-job-title" id="triage-job-title"></div>
     <div class="triage-stats" id="triage-stats"></div>
     <button class="btn-ghost" onclick="showScreen('settings')">⚙</button>
+  </div>
+  <div id="triage-upload-zone" class="hidden" style="max-width:520px;margin:32px auto">
+    <div class="drop-zone" id="drop-zone">
+      <div class="drop-icon">⬆</div>
+      <div class="drop-label">Drop LinkedIn CSV here, or <span class="drop-link">click to browse</span></div>
+      <div class="drop-hint" style="margin-top:6px">LinkedIn → "Find People to Hire" → Export CSV</div>
+      <input type="file" id="file-input" accept=".csv,.txt">
+    </div>
+    <div class="upload-error" id="upload-error"></div>
   </div>
   <div class="triage-controls" id="triage-controls"></div>
   <div id="blocked-chips"></div>
@@ -311,6 +282,10 @@ body{min-height:100vh}
       <div class="settings-row">
         <div><div class="settings-label">Clear blocked companies</div><div class="settings-desc">Remove all company blocks and hidden patterns</div></div>
         <button class="btn-danger" onclick="clearBlocks()">Clear</button>
+      </div>
+      <div class="settings-row">
+        <div><div class="settings-label">Clear candidates for current job</div><div class="settings-desc">Remove all stored candidates for the job you are triaging</div></div>
+        <button class="btn-danger" onclick="clearCandidates()">Clear</button>
       </div>
     </div>
   </div>
@@ -421,29 +396,42 @@ function rowToConnection(row,fmt){if(fmt==='sourcing'){const nm=row['Full Name']
 // ═══════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════
-const DEFAULT_JOBS=[{id:'hoa',title:'Head of Accounting, tax and consolidation'},{id:'swe',title:'Senior Software Engineer'},{id:'ae',title:'Enterprise Account Executive'},{id:'bdr',title:'Business Development Representative'},{id:'csm',title:'Customer Success Manager'},{id:'sec',title:'Senior Security Engineer'},{id:'pm',title:'Product Manager'}];
 const DEFAULT_SETTINGS={hotThreshold:65,filterCFO:true,filterInterim:true,filterExpertComptable:true};
 let jobs=[],settings={},decisions={},blockedTerms=[],hiddenPatterns=[],refineState={};
-let candidates=[],scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all';
+let liveJobs=[],customJobs=[],allJobs=[];
+let candidateCounts={};
+let scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all';
 const PAGE_SIZE=30;
-let _prevScreen='upload';
-let _pendingFile=null;
+let _prevScreen='picker';
+
+function rebuildAllJobs(){
+  allJobs=[
+    ...liveJobs.map(j=>({id:j.id,title:j.title,department:j.department||'',locations:j.locations||[],live:true})),
+    ...customJobs.map(j=>({...j,live:false})),
+  ];
+}
 
 async function loadState(){
-  const [dec,blk,rqs,jobsData,settingsData,me]=await Promise.all([
+  const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts]=await Promise.all([
     fetch('/api/decisions').then(r=>r.json()),
     fetch('/api/blocks').then(r=>r.json()),
     fetch('/api/refine').then(r=>r.json()),
     fetch('/api/jobs').then(r=>r.json()),
     fetch('/api/settings').then(r=>r.json()),
     fetch('/api/me').then(r=>r.json()),
+    fetch('/api/jobs/live').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/candidates/counts').then(r=>r.json()).catch(()=>({})),
   ]);
   decisions=dec;
   blockedTerms=blk.terms||[];
   hiddenPatterns=blk.patterns||[];
   refineState=rqs;
-  jobs=Array.isArray(jobsData)&&jobsData.length?jobsData:[...DEFAULT_JOBS];
+  customJobs=Array.isArray(customJobsData)?customJobsData:[];
+  jobs=customJobs;
   settings={...DEFAULT_SETTINGS,...settingsData};
+  liveJobs=Array.isArray(liveJobsData)?liveJobsData:[];
+  candidateCounts=counts||{};
+  rebuildAllJobs();
   const el=document.getElementById('user-display');
   if(el)el.textContent=me.name||me.id||'';
 }
@@ -456,42 +444,6 @@ function saveSettings(){fetch('/api/settings',{method:'PUT',headers:{'Content-Ty
 // ═══════════════════════════════════════════════════════════════════
 // SCORING PIPELINE
 // ═══════════════════════════════════════════════════════════════════
-function scoreAll(newConns, merge) {
-  for (const job of jobs) {
-    const newScored = [];
-    for (const c of newConns) {
-      const m = scoreMatch(c, job);
-      if (m.score >= POSSIBLE && passesFilters(c)) newScored.push({...c, score:m.score, reasons:m.reasons});
-    }
-    if (merge) {
-      const existing = scoredByJob[job.id] || [];
-      const newKeys  = new Set(newScored.map(c => ckey(c)));
-      const kept     = existing.filter(c => !newKeys.has(ckey(c)));
-      const all      = [...newScored, ...kept];
-      all.sort((a,b) => b.score - a.score);
-      scoredByJob[job.id] = all;
-    } else {
-      newScored.sort((a,b) => b.score - a.score);
-      scoredByJob[job.id] = newScored;
-    }
-  }
-}
-function processCSV(text, merge = false) {
-  const parsed = parseCSV(text);
-  const fmt    = detectFormat(parsed.headers);
-  if (fmt === 'unknown') return 'Unknown CSV format. Use LinkedIn "Find People to Hire" or Connections export.';
-  const newConns = parsed.rows.map(r => rowToConnection(r, fmt)).filter(c => c.title || c.company);
-  if (merge) {
-    const existingKeys = new Set(candidates.map(c => ckey(c)));
-    const fresh = newConns.filter(c => !existingKeys.has(ckey(c)));
-    candidates = [...candidates, ...fresh];
-  } else {
-    candidates  = newConns;
-    scoredByJob = {};
-  }
-  scoreAll(newConns, merge);
-  return null;
-}
 function ckey(c){return c.name+'|'+c.company}
 function companyReputation(company){if(!company)return 0;let kept=0,skipped=0;for(const list of Object.values(scoredByJob)){for(const c of list){if(c.company!==company)continue;const d=decisions[ckey(c)];if(d==='kept')kept++;else if(d==='excl')skipped++}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
 function adjustedScore(c){return c.score+companyReputation(c.company)}
@@ -512,42 +464,46 @@ function isTitleHidden(title){if(isCfoTitle(title)||(settings.filterInterim&&isI
 // ═══════════════════════════════════════════════════════════════════
 function initUpload(){
   const zone=document.getElementById('drop-zone');
+  if(!zone||zone._init)return;
+  zone._init=true;
   const inp=document.getElementById('file-input');
   zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('over')});
   zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
   zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('over');handleFile(e.dataTransfer.files[0])});
   inp.addEventListener('change',()=>{handleFile(inp.files[0]);inp.value=''});
-  const decCount=Object.keys(decisions).length;
-  if(decCount>0){document.getElementById('upload-prev-msg').textContent=`${decCount} decision${decCount===1?'':'s'} saved — upload the same CSV to continue.`;document.getElementById('upload-prev').classList.remove('hidden')}
 }
+function triggerUpload(){document.getElementById('file-input').click()}
 function handleFile(file){
   if(!file)return;
   document.getElementById('upload-error').style.display='none';
   const reader=new FileReader();
-  reader.onload=e=>{
-    const text=e.target.result;
-    if(candidates.length>0){
-      _pendingFile=text;
-      const totalNew=parseCSV(text).rows.length;
-      document.getElementById('merge-sub').textContent=`You already have ${candidates.length} candidates loaded. Merge ${totalNew} new candidates into the existing list, or start fresh?`;
-      document.getElementById('merge-confirm').classList.remove('hidden');
-    } else {
-      applyCSV(text,false);
-    }
-  };
+  reader.onload=e=>applyCSV(e.target.result);
   reader.readAsText(file,'utf-8');
 }
-function confirmMerge(merge){
-  document.getElementById('merge-confirm').classList.add('hidden');
-  if(_pendingFile)applyCSV(_pendingFile,merge);
-  _pendingFile=null;
-}
-function applyCSV(text,merge){
-  const err=document.getElementById('upload-error');
-  const error=processCSV(text,merge);
-  if(error){err.textContent=error;err.style.display='block';return}
-  renderPicker();
-  showScreen('picker');
+async function applyCSV(text){
+  const errEl=document.getElementById('upload-error');
+  const parsed=parseCSV(text);
+  const fmt=detectFormat(parsed.headers);
+  if(fmt==='unknown'){errEl.textContent='Unknown CSV format. Use LinkedIn "Find People to Hire" or Connections export.';errEl.style.display='block';return}
+  const job=allJobs.find(j=>j.id===currentJobId);
+  if(!job){errEl.textContent='No job selected.';errEl.style.display='block';return}
+  const newConns=parsed.rows.map(r=>rowToConnection(r,fmt)).filter(c=>c.title||c.company);
+  const toSave=[];
+  for(const c of newConns){
+    const m=scoreMatch(c,job);
+    if(m.score>=POSSIBLE&&passesFilters(c)){
+      toSave.push({name:c.name,first_name:c.firstName||'',last_name:c.lastName||'',company:c.company||'',title:c.title,linkedin_url:c.url||'',dedup_key:ckey(c),score:m.score,reasons:m.reasons});
+    }
+  }
+  if(!toSave.length){showToast('No matching candidates found');return}
+  const res=await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave})});
+  if(!res.ok){errEl.textContent='Failed to save candidates.';errEl.style.display='block';return}
+  const {count}=await res.json();
+  const fresh=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>r.json()).catch(()=>[]);
+  scoredByJob[currentJobId]=Array.isArray(fresh)?fresh:[];
+  candidateCounts[currentJobId]=scoredByJob[currentJobId].length;
+  showToast(`Saved ${count} candidates`);
+  renderList();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -555,22 +511,43 @@ function applyCSV(text,merge){
 // ═══════════════════════════════════════════════════════════════════
 function renderPicker(){
   const ht=settings.hotThreshold;
-  document.getElementById('picker-sub').textContent=`${candidates.length} candidates · ${jobs.length} roles`;
-  document.getElementById('job-list').innerHTML=jobs.map(job=>{
-    const all=scoredByJob[job.id]||[];
-    const hot=all.filter(c=>c.score>=ht).length;
-    const warm=all.filter(c=>c.score>=POSSIBLE&&c.score<ht).length;
+  document.getElementById('picker-sub').textContent=`${allJobs.length} open role${allJobs.length===1?'':'s'}`;
+  const card=job=>{
+    const jid=job.id;
+    const total=candidateCounts[jid]||0;
+    const scored=scoredByJob[jid]||[];
+    const hot=scored.filter(c=>c.score>=ht).length;
+    const warm=scored.filter(c=>c.score>=POSSIBLE&&c.score<ht).length;
     const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
     const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
-    const noneB=!hot&&!warm?`<span class="count-badge count-zero">No matches</span>`:'';
-    return`<div class="job-card" onclick="openJob('${esc(job.id)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div><div class="job-card-counts">${hotB}${warmB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
-  }).join('');
+    const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
+    const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">No candidates yet</span>`:'';
+    const meta=job.live&&job.department?`<div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(job.department)}${job.locations&&job.locations.length?' · '+job.locations.slice(0,2).map(esc).join(', '):''}</div>`:'';
+    return`<div class="job-card" onclick="openJob('${esc(jid)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div>${meta}<div class="job-card-counts">${hotB}${warmB}${totalB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
+  };
+  const liveSec=liveJobs.length?`<div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Open at GitGuardian</div>`:'';
+  const custSec=customJobs.length?`<div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin:20px 0 10px">Custom roles</div>`:'';
+  document.getElementById('job-list').innerHTML=
+    liveSec+liveJobs.map(j=>card({...j,live:true})).join('')+
+    custSec+customJobs.map(j=>card({...j,live:false})).join('');
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // TRIAGE
 // ═══════════════════════════════════════════════════════════════════
-function openJob(jobId){currentJobId=jobId;currentPage=1;showWarm=false;decFilter='all';const job=jobs.find(j=>j.id===jobId);document.getElementById('triage-job-title').textContent=job?job.title:jobId;renderList();showScreen('triage')}
+async function openJob(jobId){
+  currentJobId=jobId;currentPage=1;showWarm=false;decFilter='all';
+  const job=allJobs.find(j=>j.id===jobId);
+  document.getElementById('triage-job-title').textContent=job?job.title:jobId;
+  showScreen('triage');
+  initUpload();
+  if(!scoredByJob[jobId]){
+    document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--text-3)">Loading…</div>';
+    const data=await fetch(`/api/jobs/${jobId}/candidates`).then(r=>r.json()).catch(()=>[]);
+    scoredByJob[jobId]=Array.isArray(data)?data:[];
+  }
+  renderList();
+}
 function getCandidatesForJob(){return(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c))}
 function skippedCandidates(){return getCandidatesForJob().filter(c=>decisions[ckey(c)]==='excl')}
 
@@ -601,13 +578,17 @@ function renderList(){
   document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped`;
   const keptWithUrl=all.filter(c=>decisions[ckey(c)]==='kept'&&c.url);
   const ctrlDec=(lbl,val)=>`<button class="ctrl-chip${decFilter===val?' active':''}" onclick="setDecFilter('${val}')">${lbl}</button>`;
-  document.getElementById('triage-controls').innerHTML=`
-    ${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Undecided','undet')}
+  const hasNoCands=(scoredByJob[currentJobId]||[]).length===0;
+  document.getElementById('triage-upload-zone').classList.toggle('hidden',!hasNoCands);
+  document.getElementById('triage-controls').innerHTML=hasNoCands?'':
+    `${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Undecided','undet')}
     <div class="ctrl-sep"></div>
     <button class="ctrl-chip${showWarm?' active':''}" onclick="toggleWarm()">Show WARM</button>
     <div class="ctrl-sep"></div>
     <button class="ctrl-chip" onclick="openAllKept()"${keptWithUrl.length?'':' disabled'}>Open kept (${keptWithUrl.length})</button>
-    <button class="ctrl-chip" onclick="downloadKeptCSV()"${keptCount?'':' disabled'}>Download kept CSV</button>`;
+    <button class="ctrl-chip" onclick="downloadKeptCSV()"${keptCount?'':' disabled'}>Download CSV</button>
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-chip" onclick="triggerUpload()">+ Add more</button>`;
   document.getElementById('blocked-chips').innerHTML=blockedTerms.length
     ?`<div class="blocked-chips">${blockedTerms.map(t=>`<span class="chip">${esc(t)}<span class="chip-x" onclick="unblock('${esc(t)}')">×</span></span>`).join('')}</div>`:'';
   document.getElementById('cand-list').innerHTML=pageSlice.map(c=>{
@@ -651,20 +632,7 @@ function openAllKept(){
   urls.forEach(u=>window.open(u,'_blank','noopener,noreferrer'));
 }
 function downloadKeptCSV(){
-  const all=getCandidatesForJob();
-  const kept=all.filter(c=>decisions[ckey(c)]==='kept');
-  if(!kept.length){showToast('No kept candidates');return}
-  const job=jobs.find(j=>j.id===currentJobId);
-  const rows=[['Name','Title','Company','Score','LinkedIn','Reasons']];
-  kept.forEach(c=>rows.push([c.name,c.title,c.company,String(c.score),c.url,c.reasons.join(' | ')]));
-  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=`kept-${(job?.title||currentJobId).replace(/[^a-z0-9]/gi,'-').toLowerCase()}.csv`;
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
-  showToast(`Downloaded ${kept.length} profiles`);
+  window.location.href=`/api/jobs/${currentJobId}/export.csv`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -714,14 +682,24 @@ function renderSettings(){document.getElementById('thresh-slider').value=setting
 function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.map(j=>`<div class="job-item"><span class="job-item-title">${esc(j.title)}</span><button class="btn-del" onclick="removeJob('${esc(j.id)}')" title="Remove">×</button></div>`).join('')}
 function updateThreshold(v){settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings()}
 function updateFilter(key,val){settings[key]=val;saveSettings()}
-async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const {id}=await res.json();jobs.push({id,title});inp.value='';renderJobsList();if(candidates.length){const newScored=[];for(const c of candidates){const m=scoreMatch(c,{id,title});if(m.score>=POSSIBLE&&passesFilters(c))newScored.push({...c,score:m.score,reasons:m.reasons})}newScored.sort((a,b)=>b.score-a.score);scoredByJob[id]=newScored}showToast('Role added')}
-async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);delete scoredByJob[id];await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
+async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const {id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderJobsList();showToast('Role added')}
+async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);customJobs=jobs;rebuildAllJobs();delete scoredByJob[id];await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
 async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};await fetch('/api/decisions',{method:'DELETE'});showToast('Decisions cleared')}
 async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
+async function clearCandidates(){
+  if(!currentJobId){showToast('Open a job first to clear its candidates');return}
+  const job=allJobs.find(j=>j.id===currentJobId);
+  if(!confirm(`Remove all candidates for "${job?job.title:currentJobId}"?`))return;
+  await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'DELETE'});
+  scoredByJob[currentJobId]=[];
+  candidateCounts[currentJobId]=0;
+  renderList();
+  showToast('Candidates cleared');
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════
-loadState().then(()=>initUpload());
+loadState().then(()=>renderPicker());
 </script>
 </html>
