@@ -467,17 +467,18 @@ function rebuildAllJobs(){
   ];
 }
 
+function apiFetch(url,def){return fetch(url).then(r=>{if(r.status===401){location.href='/';return def}return r.json()}).catch(()=>def)}
 async function loadState(){
   const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts,prefData]=await Promise.all([
-    fetch('/api/decisions').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/blocks').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/refine').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/jobs').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/settings').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/me').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/jobs/live').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/candidates/counts').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/preferred-companies').then(r=>r.json()).catch(()=>[]),
+    apiFetch('/api/decisions',{}),
+    apiFetch('/api/blocks',{}),
+    apiFetch('/api/refine',{}),
+    apiFetch('/api/jobs',[]),
+    apiFetch('/api/settings',{}),
+    apiFetch('/api/me',{}),
+    apiFetch('/api/jobs/live',[]),
+    apiFetch('/api/candidates/counts',{}),
+    apiFetch('/api/preferred-companies',[]),
   ]);
   decisions=dec;
   blockedTerms=blk.terms||[];

@@ -366,6 +366,9 @@ export default {
     }
 
     if (url.pathname.startsWith('/api/')) return handleAPI(request, url, session, env);
-    return env.ASSETS.fetch(request);
+    const assetRes = await env.ASSETS.fetch(request);
+    const h = new Headers(assetRes.headers);
+    h.set('Cache-Control', 'private, no-store');
+    return new Response(assetRes.body, {status:assetRes.status, statusText:assetRes.statusText, headers:h});
   },
 };
