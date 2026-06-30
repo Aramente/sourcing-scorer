@@ -1,6 +1,7 @@
 name = "sourcing-scorer"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
+workers_dev = true
 
 [assets]
 directory = "./public"
@@ -10,6 +11,11 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "sourcing-scorer"
 database_id = "e0a654e3-eef5-412d-826e-449618e3aeb3"
+
+# Uncomment once sloow.app is added as a Cloudflare zone in your account:
+# [[routes]]
+# pattern = "sourcing-scorer.sloow.app"
+# custom_domain = true
 
 [vars]
 USER1_ID = "kevin"

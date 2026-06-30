@@ -172,6 +172,15 @@ body{min-height:100vh}
 .btn-copy{font:inherit;font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:2px 8px;border-radius:4px}
 .btn-copy:hover{background:var(--blue-dim)}
 .lists-empty{font-size:13px;color:var(--text-3);text-align:center;padding:20px 0}
+.pref-item{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.pref-item:last-child{border-bottom:none}
+.pref-tier{font-size:11px;padding:1px 7px;border-radius:10px;font-weight:600;flex-shrink:0}
+.pref-tier-1{background:var(--amber-dim);color:var(--amber)}
+.pref-tier-2{background:var(--blue-dim);color:var(--blue)}
+.pref-search{flex:1;font:inherit;font-size:13px;padding:7px 11px;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);outline:none}
+.pref-search:focus{border-color:var(--blue)}
+.btn-block-global{font:inherit;font-size:12px;color:var(--red);background:none;border:1.5px solid #FECACA;border-radius:6px;padding:3px 8px;cursor:pointer;flex-shrink:0}
+.btn-block-global:hover{background:var(--red-dim)}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
 .toast.hidden{opacity:0}
 /* ── USER BANNER ── */
@@ -288,6 +297,22 @@ body{min-height:100vh}
         <button class="btn-danger" onclick="clearCandidates()">Clear</button>
       </div>
     </div>
+    <div class="settings-section">
+      <div class="settings-section-title">Preferred Companies ⭐</div>
+      <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">Tier 1 = +15 pts · Tier 2 = +10 pts. Pre-seeded with ~500 security + tech companies.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input class="pref-search" type="text" id="pref-search" placeholder="Filter companies…" oninput="renderPrefList()">
+      </div>
+      <div id="pref-list" style="max-height:260px;overflow-y:auto;margin-bottom:12px"></div>
+      <div class="add-job-form">
+        <input class="add-job-input" type="text" id="add-pref-input" placeholder="Company name…" onkeydown="if(event.key==='Enter')addPrefCompany()">
+        <select id="add-pref-tier" style="font:inherit;font-size:13px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--text);cursor:pointer">
+          <option value="2">Tier 2 (+10)</option>
+          <option value="1">Tier 1 (+15)</option>
+        </select>
+        <button class="btn-add" onclick="addPrefCompany()">Add</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -398,6 +423,7 @@ function rowToConnection(row,fmt){if(fmt==='sourcing'){const nm=row['Full Name']
 // ═══════════════════════════════════════════════════════════════════
 const DEFAULT_SETTINGS={hotThreshold:65,filterCFO:true,filterInterim:true,filterExpertComptable:true};
 let jobs=[],settings={},decisions={},blockedTerms=[],hiddenPatterns=[],refineState={};
+let preferredCompanies=[],prefMap=new Map();
 let liveJobs=[],customJobs=[],allJobs=[];
 let candidateCounts={};
 let scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all';
@@ -412,7 +438,7 @@ function rebuildAllJobs(){
 }
 
 async function loadState(){
-  const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts]=await Promise.all([
+  const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts,prefData]=await Promise.all([
     fetch('/api/decisions').then(r=>r.json()),
     fetch('/api/blocks').then(r=>r.json()),
     fetch('/api/refine').then(r=>r.json()),
@@ -421,6 +447,7 @@ async function loadState(){
     fetch('/api/me').then(r=>r.json()),
     fetch('/api/jobs/live').then(r=>r.json()).catch(()=>[]),
     fetch('/api/candidates/counts').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/preferred-companies').then(r=>r.json()).catch(()=>[]),
   ]);
   decisions=dec;
   blockedTerms=blk.terms||[];
@@ -431,11 +458,13 @@ async function loadState(){
   settings={...DEFAULT_SETTINGS,...settingsData};
   liveJobs=Array.isArray(liveJobsData)?liveJobsData:[];
   candidateCounts=counts||{};
+  preferredCompanies=Array.isArray(prefData)?prefData:[];
+  prefMap=new Map(preferredCompanies.map(c=>[c.name.toLowerCase().trim(),c]));
   rebuildAllJobs();
   const el=document.getElementById('user-display');
   if(el)el.textContent=me.name||me.id||'';
 }
-function saveDec(key,action){fetch('/api/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,action:action||null})})}
+function saveDec(key,action,onError){fetch('/api/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,action:action||null})}).then(r=>{if(!r.ok)throw new Error()}).catch(()=>{if(onError)onError();showToast('Save failed — please retry')})}
 function saveBlk(){fetch('/api/blocks',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({terms:blockedTerms,patterns:hiddenPatterns})})}
 function saveHPat(){saveBlk()}
 function saveRqs(){fetch('/api/refine',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(refineState)})}
@@ -446,7 +475,8 @@ function saveSettings(){fetch('/api/settings',{method:'PUT',headers:{'Content-Ty
 // ═══════════════════════════════════════════════════════════════════
 function ckey(c){return c.name+'|'+c.company}
 function companyReputation(company){if(!company)return 0;let kept=0,skipped=0;for(const list of Object.values(scoredByJob)){for(const c of list){if(c.company!==company)continue;const d=decisions[ckey(c)];if(d==='kept')kept++;else if(d==='excl')skipped++}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
-function adjustedScore(c){return c.score+companyReputation(c.company)}
+function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}for(const[key,c]of prefMap){if(n.includes(key)||key.includes(n))return c.tier===1?15:10}return 0}
+function adjustedScore(c){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)}
 
 // ═══════════════════════════════════════════════════════════════════
 // UI HELPERS
@@ -598,14 +628,15 @@ function renderList(){
     const kA=dec==='kept'?' active':'';const xA=dec==='excl'?' active':'';
     const liBtn=c.url?`<button class="btn-li" data-url="${esc(c.url)}" onclick="openLI(this.dataset.url)">LinkedIn ↗</button>`:'';
     const rep=companyReputation(c.company);
-    const adjNote=rep!==0?` <span style="font-size:11px;color:var(--text-3)">(${rep>0?'+':''}${rep})</span>`:'';
+    const pref=companyPreferenceBonus(c.company);
+    const adjNote=(rep!==0||pref!==0)?` <span style="font-size:11px;color:var(--text-3)">(${rep!==0?(rep>0?'+':'')+rep:''}${pref>0?(rep!==0?' ':'')+'⭐+'+pref:''})</span>`:'';
     return`<div class="cand-card${dec!=='undet'?' decided':''}">
       <div class="cand-header">
         <div class="cand-score score-${tier}">${adj}${adjNote}</div>
         <div class="cand-meta">
           <div class="cand-name">${esc(c.name)}</div>
           <div class="cand-title">${esc(c.title)}</div>
-          <div class="cand-company">${esc(c.company)}</div>
+          <div class="cand-company">${pref>0?'⭐ ':''}${esc(c.company)}</div>
         </div>
         <div class="cand-actions">${liBtn}<button class="btn-keep${kA}" onclick="decide('${esc(k)}','kept')">✓ Keep</button><button class="btn-skip${xA}" onclick="decide('${esc(k)}','excl')">✕ Skip</button></div>
       </div>
@@ -619,7 +650,7 @@ function renderList(){
 function goPage(n){currentPage=n;renderList();window.scrollTo(0,0)}
 function setDecFilter(f){decFilter=f;currentPage=1;renderList()}
 function toggleWarm(){showWarm=!showWarm;currentPage=1;renderList()}
-function decide(k,action){const prev=decisions[k];decisions[k]=prev===action?undefined:action;if(!decisions[k])delete decisions[k];saveDec(k,decisions[k]||null);currentPage=1;renderList()}
+function decide(k,action){const prev=decisions[k];const next=prev===action?undefined:action;if(next)decisions[k]=next;else delete decisions[k];renderList();saveDec(k,decisions[k]||null,()=>{if(prev!==undefined)decisions[k]=prev;else delete decisions[k];renderList()})}
 function unblock(term){blockedTerms=blockedTerms.filter(t=>t!==term);saveBlk();renderList()}
 
 // ═══════════════════════════════════════════════════════════════════
@@ -652,6 +683,9 @@ function analyzeSkipPatterns(){
   const intSkips=skipped.filter(c=>isInterim(c.title));
   const intHidden=hiddenPatterns.some(p=>p.regex.includes('interim'));
   if(intSkips.length>=1&&!intHidden)questions.push({id:'pat_interim',html:`<strong>${intSkips.length} skipped</strong> are interim / managers de transition — filter them?`,yes:()=>{hiddenPatterns.push({label:'Interim / freelance',regex:'\\b(interim|interimaire|freelance|consultant indépendant)\\b'});saveHPat();renderList()}});
+  const xjobCount={};
+  for(const[,list]of Object.entries(scoredByJob)){for(const c of list){if(!c.company)continue;const d=decisions[ckey(c)];if(d!=='excl')continue;const alreadyBlocked=blockedTerms.some(t=>c.company.toLowerCase().includes(t.toLowerCase()));if(!alreadyBlocked)xjobCount[c.company]=(xjobCount[c.company]||0)+1}}
+  Object.entries(xjobCount).filter(([,n])=>n>=3).sort((a,b)=>b[1]-a[1]).slice(0,5).forEach(([co,n])=>{if(!questions.find(q=>q.id==='xjob_'+co))questions.push({id:'xjob_'+co,html:`<strong>Cross-job: ${n}× <span class="pattern-tag">${esc(co)}</span></strong> skipped across all jobs — block globally?`,yes:()=>{blockedTerms.push(co);saveBlk();renderList()}})});
   return questions;
 }
 let __refineActions={};
@@ -668,18 +702,20 @@ function showLists(){
   for(const list of Object.values(scoredByJob)){for(const c of list){if(!c.company)continue;const d=decisions[ckey(c)];if(d==='kept')source[c.company]=(source[c.company]||0)+1;else if(d==='excl')avoid[c.company]=(avoid[c.company]||0)+1}}
   const sortedSrc=Object.entries(source).sort((a,b)=>b[1]-a[1]);
   const sortedAvoid=Object.entries(avoid).sort((a,b)=>b[1]-a[1]);
-  const listHtml=(entries,label)=>entries.length?entries.map(([co,n])=>`<div class="company-row"><span class="company-name">${esc(co)}</span><span class="company-count">${n}</span></div>`).join(''):`<div class="lists-empty">No ${label} yet</div>`;
   const srcStr=sortedSrc.map(([co])=>co).join(', ');
   const avoidStr=sortedAvoid.map(([co])=>co).join(', ');
-  document.getElementById('lists-content').innerHTML=`<div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Source from<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(srcStr)}').then(()=>showToast('Copied'))">Copy</button></div>${listHtml(sortedSrc,'kept companies')}</div><div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Avoid<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(avoidStr)}').then(()=>showToast('Copied'))">Copy</button></div>${listHtml(sortedAvoid,'skipped companies')}</div>`;
+  const srcHtml=sortedSrc.length?sortedSrc.map(([co,n])=>`<div class="company-row"><span class="company-name">${esc(co)}</span><span class="company-count">${n}</span></div>`).join(''):`<div class="lists-empty">No kept companies yet</div>`;
+  const avoidHtml=sortedAvoid.length?sortedAvoid.map(([co,n])=>{const blk=isBlocked(co);return`<div class="company-row"><span class="company-name">${esc(co)}</span><span class="company-count">${n}</span>${!blk?`<button class="btn-block-global" data-co="${esc(co)}" onclick="blockGlobal(this.dataset.co)">🚫 Block</button>`:''}</div>`}).join(''):`<div class="lists-empty">No avoided companies yet</div>`;
+  document.getElementById('lists-content').innerHTML=`<div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Source from<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(srcStr)}').then(()=>showToast('Copied'))">Copy</button></div>${srcHtml}</div><div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Avoid<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(avoidStr)}').then(()=>showToast('Copied'))">Copy</button></div>${avoidHtml}</div>`;
   document.getElementById('overlay-lists').classList.remove('hidden');
 }
+function blockGlobal(term){blockedTerms.push(term);saveBlk();renderList();showLists();showToast('Blocked: '+term)}
 function hideLists(){document.getElementById('overlay-lists').classList.add('hidden')}
 
 // ═══════════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════════
-function renderSettings(){document.getElementById('thresh-slider').value=settings.hotThreshold;document.getElementById('thresh-val').textContent=settings.hotThreshold;document.getElementById('tog-cfo').checked=settings.filterCFO;document.getElementById('tog-interim').checked=settings.filterInterim;document.getElementById('tog-ec').checked=settings.filterExpertComptable;renderJobsList()}
+function renderSettings(){document.getElementById('thresh-slider').value=settings.hotThreshold;document.getElementById('thresh-val').textContent=settings.hotThreshold;document.getElementById('tog-cfo').checked=settings.filterCFO;document.getElementById('tog-interim').checked=settings.filterInterim;document.getElementById('tog-ec').checked=settings.filterExpertComptable;renderJobsList();renderPrefList()}
 function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.map(j=>`<div class="job-item"><span class="job-item-title">${esc(j.title)}</span><button class="btn-del" onclick="removeJob('${esc(j.id)}')" title="Remove">×</button></div>`).join('')}
 function updateThreshold(v){settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings()}
 function updateFilter(key,val){settings[key]=val;saveSettings()}
@@ -697,6 +733,29 @@ async function clearCandidates(){
   renderList();
   renderPicker();
   showToast('Candidates cleared');
+}
+
+function renderPrefList(){
+  const q=(document.getElementById('pref-search')||{}).value||'';
+  const filtered=q?preferredCompanies.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())):preferredCompanies;
+  const el=document.getElementById('pref-list');if(!el)return;
+  el.innerHTML=filtered.length?filtered.map(c=>`<div class="pref-item"><span style="flex:1;font-size:14px">${esc(c.name)}</span><span class="pref-tier pref-tier-${c.tier}">T${c.tier}</span><button class="btn-del" data-name="${esc(c.name)}" onclick="removePrefCompany(this.dataset.name)">×</button></div>`).join(''):`<div class="lists-empty">No preferred companies yet</div>`;
+}
+async function addPrefCompany(){
+  const inp=document.getElementById('add-pref-input');
+  const name=inp.value.trim();if(!name)return;
+  const tier=parseInt(document.getElementById('add-pref-tier').value)||2;
+  const res=await fetch('/api/preferred-companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,tier,category:'custom'})});
+  if(!res.ok){showToast('Failed to add');return}
+  preferredCompanies.push({name,tier,category:'custom'});
+  prefMap.set(name.toLowerCase().trim(),{name,tier,category:'custom'});
+  inp.value='';renderPrefList();showToast('Added: '+name);
+}
+async function removePrefCompany(name){
+  await fetch(`/api/preferred-companies/${encodeURIComponent(name)}`,{method:'DELETE'});
+  preferredCompanies=preferredCompanies.filter(c=>c.name!==name);
+  prefMap.delete(name.toLowerCase().trim());
+  renderPrefList();showToast('Removed: '+name);
 }
 
 // ═══════════════════════════════════════════════════════════════════

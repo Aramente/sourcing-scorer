@@ -67,3 +67,9 @@ CREATE TABLE IF NOT EXISTS candidates (
   reasons TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (user_id, job_id, dedup_key)
 );
+
+CREATE TABLE IF NOT EXISTS preferred_companies (
+  name TEXT PRIMARY KEY,
+  tier INTEGER NOT NULL DEFAULT 2,
+  category TEXT NOT NULL DEFAULT 'general'
+);

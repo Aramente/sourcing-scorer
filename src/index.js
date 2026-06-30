@@ -263,6 +263,26 @@ async function handleAPI(request, url, session, env) {
     }
   }
 
+  // preferred companies (shared, not per-user)
+  if (path==='/api/preferred-companies') {
+    if (method==='GET') {
+      const rows = await env.DB.prepare('SELECT name,tier,category FROM preferred_companies ORDER BY tier,name').all();
+      return ok(rows.results);
+    }
+    if (method==='POST') {
+      let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+      const {name,tier=2,category='custom'} = body;
+      if (!name) return err(400,'Missing name');
+      await env.DB.prepare('INSERT OR REPLACE INTO preferred_companies (name,tier,category) VALUES(?,?,?)').bind(name.trim(),parseInt(tier)||2,category||'custom').run();
+      return ok({ok:true});
+    }
+  }
+  const prefDel = path.match(/^\/api\/preferred-companies\/(.+)$/);
+  if (prefDel && method==='DELETE') {
+    await env.DB.prepare('DELETE FROM preferred_companies WHERE name=?').bind(decodeURIComponent(prefDel[1])).run();
+    return ok({ok:true});
+  }
+
   return err(404,'Not found');
 }
 
