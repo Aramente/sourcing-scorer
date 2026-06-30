@@ -128,7 +128,7 @@ async function handleAPI(request, url, session, env) {
     try {
       const res = await fetch('https://careers.gitguardian.com/jobs.json');
       const data = await res.json();
-      _liveJobsCache = data.items || [];
+      _liveJobsCache = (data.items || []).map(j => ({id:j.id, title:j.title, url:j.url, date_published:j.date_published}));
       _liveJobsCacheAt = now;
       return ok(_liveJobsCache);
     } catch {
