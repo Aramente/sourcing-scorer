@@ -95,7 +95,7 @@ async function handleAPI(request, url, session, env) {
     if (method==='POST') {
       const {key,action} = await request.json();
       if (!key) return err(400,'Missing key');
-      if (action && action !== 'kept' && action !== 'excl') return err(400,'Invalid action');
+      if (action && action !== 'kept' && action !== 'excl' && action !== 'view') return err(400,'Invalid action');
       if (!action) await env.DB.prepare('DELETE FROM decisions WHERE user_id=? AND candidate_key=?').bind(uid,key).run();
       else await env.DB.prepare('INSERT OR REPLACE INTO decisions (user_id,candidate_key,action) VALUES(?,?,?)').bind(uid,key,action).run();
       return ok({ok:true});

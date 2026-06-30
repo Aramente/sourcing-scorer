@@ -94,11 +94,13 @@ body{min-height:100vh}
 .cand-title{font-size:13px;color:var(--text-2);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cand-company{font-size:12px;color:var(--text-3)}
 .cand-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.btn-keep,.btn-skip{font:inherit;font-size:13px;font-weight:500;border-radius:8px;padding:6px 14px;border:1.5px solid;cursor:pointer;transition:all .12s}
+.btn-keep,.btn-skip,.btn-view{font:inherit;font-size:13px;font-weight:500;border-radius:8px;padding:6px 14px;border:1.5px solid;cursor:pointer;transition:all .12s}
 .btn-keep{background:var(--white);border-color:var(--border);color:var(--text-2)}
 .btn-keep:hover,.btn-keep.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
 .btn-skip{background:var(--white);border-color:var(--border);color:var(--text-2)}
 .btn-skip:hover,.btn-skip.active{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+.btn-view{background:var(--white);border-color:var(--border);color:var(--text-2)}
+.btn-view:hover,.btn-view.active{background:var(--indigo-dim);border-color:var(--indigo);color:var(--indigo)}
 .btn-li{font:inherit;font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;flex-shrink:0}
 .btn-li:hover{color:var(--indigo)}
 .cand-reasons{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
@@ -672,6 +674,7 @@ function renderList(){
     const d=decisions[dkey(currentJobId,c)]||'undet';
     if(decFilter==='kept'&&d!=='kept')return false;
     if(decFilter==='excl'&&d!=='excl')return false;
+    if(decFilter==='view'&&d!=='view')return false;
     if(decFilter==='undet'&&d!=='undet')return false;
     if(!showWarm&&adjustedScore(c)<ht)return false;
     return true;
@@ -683,13 +686,14 @@ function renderList(){
   const warmCount=all.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
   const keptCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='kept').length;
   const sklCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='excl').length;
-  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped`;
+  const viewCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='view').length;
+  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped${viewCount?' · '+viewCount+' viewed':''}`;
   const keptWithUrl=all.filter(c=>decisions[dkey(currentJobId,c)]==='kept'&&c.url);
   const ctrlDec=(lbl,val)=>`<button class="ctrl-chip${decFilter===val?' active':''}" onclick="setDecFilter('${val}')">${lbl}</button>`;
   const hasNoCands=(scoredByJob[currentJobId]||[]).length===0;
   document.getElementById('triage-upload-zone').classList.toggle('hidden',!hasNoCands);
   document.getElementById('triage-controls').innerHTML=hasNoCands?'':
-    `${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Undecided','undet')}
+    `${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Viewed 👁','view')} ${ctrlDec('Undecided','undet')}
     <div class="ctrl-sep"></div>
     <button class="ctrl-chip${showWarm?' active':''}" onclick="toggleWarm()">Show WARM</button>
     <div class="ctrl-sep"></div>
@@ -702,7 +706,7 @@ function renderList(){
   document.getElementById('cand-list').innerHTML=pageSlice.map(c=>{
     const k=dkey(currentJobId,c);const dec=decisions[k]||'undet';const adj=adjustedScore(c);
     const tier=adj>=ht?'hot':'warm';
-    const kA=dec==='kept'?' active':'';const xA=dec==='excl'?' active':'';
+    const kA=dec==='kept'?' active':'';const xA=dec==='excl'?' active':'';const vA=dec==='view'?' active':'';
     const liBtn=c.url?`<button class="btn-li" data-url="${esc(c.url)}" onclick="openLI(this.dataset.url)">LinkedIn ↗</button>`:'';
     const rep=companyReputation(c.company);
     const pref=companyPreferenceBonus(c.company);
@@ -715,7 +719,7 @@ function renderList(){
           <div class="cand-title">${esc(c.title)}</div>
           <div class="cand-company">${pref>0?'⭐ ':''}${esc(c.company)}</div>
         </div>
-        <div class="cand-actions">${liBtn}<button class="btn-keep${kA}" onclick="decide('${esc(k)}','kept')">✓ Keep</button><button class="btn-skip${xA}" onclick="decide('${esc(k)}','excl')">✕ Skip</button></div>
+        <div class="cand-actions">${liBtn}<button class="btn-view${vA}" onclick="decide('${esc(k)}','view')">👁 Viewed</button><button class="btn-keep${kA}" onclick="decide('${esc(k)}','kept')">✓ Keep</button><button class="btn-skip${xA}" onclick="decide('${esc(k)}','excl')">✕ Skip</button></div>
       </div>
       <div class="cand-reasons">${c.reasons.map(r=>`<span class="reason-tag">${esc(r)}</span>`).join('')}</div>
     </div>`;
