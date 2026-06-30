@@ -541,7 +541,7 @@ function initUpload(){
   const inp=document.getElementById('file-input');
   zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('over')});
   zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
-  zone.addEventListener('click',()=>inp.click());
+  zone.addEventListener('click',e=>{if(e.target!==inp)inp.click()});
   zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('over');handleFile(e.dataTransfer.files[0])});
   inp.addEventListener('change',()=>{handleFile(inp.files[0]);inp.value=''});
 }
