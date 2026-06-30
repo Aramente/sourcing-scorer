@@ -1,16 +1,6 @@
 const SESSION_NAME = 'ss_session';
 const SESSION_MS = 7 * 86400_000;
 
-const DEFAULT_JOBS = [
-  {id:'hoa',title:'Head of Accounting, tax and consolidation'},
-  {id:'swe',title:'Senior Software Engineer'},
-  {id:'ae',title:'Enterprise Account Executive'},
-  {id:'bdr',title:'Business Development Representative'},
-  {id:'csm',title:'Customer Success Manager'},
-  {id:'sec',title:'Senior Security Engineer'},
-  {id:'pm',title:'Product Manager'},
-];
-
 // ── password ──────────────────────────────────────────────────────
 async function hashPassword(plain, salt) {
   const enc = new TextEncoder();
@@ -128,11 +118,31 @@ async function handleAPI(request, url, session, env) {
     }
   }
 
+  // live Teamtailor jobs — must come before /api/jobs to avoid prefix collision
+  if (path==='/api/jobs/live' && method==='GET') {
+    try {
+      const res = await fetch('https://careers.gitguardian.com/jobs.json');
+      const data = await res.json();
+      return ok(data.items || []);
+    } catch {
+      return ok([]);
+    }
+  }
+
+  if (path==='/api/candidates/counts' && method==='GET') {
+    const rows = await env.DB.prepare(
+      'SELECT job_id, COUNT(*) as n FROM candidates WHERE user_id=? GROUP BY job_id'
+    ).bind(uid).all();
+    const counts = {};
+    rows.results.forEach(r => { counts[r.job_id] = r.n; });
+    return ok(counts);
+  }
+
   // jobs
   if (path==='/api/jobs') {
     if (method==='GET') {
       const rows = await env.DB.prepare('SELECT id,title FROM jobs WHERE user_id=? ORDER BY sort_order').bind(uid).all();
-      return ok(rows.results.length ? rows.results : DEFAULT_JOBS);
+      return ok(rows.results);
     }
     if (method==='POST') {
       const {title} = await request.json();
@@ -147,6 +157,76 @@ async function handleAPI(request, url, session, env) {
   if (jobDel && method==='DELETE') {
     await env.DB.prepare('DELETE FROM jobs WHERE user_id=? AND id=?').bind(uid,jobDel[1]).run();
     return ok({ok:true});
+  }
+
+  // candidate CRUD per job
+  const jobCand = path.match(/^\/api\/jobs\/([^/]+)\/candidates$/);
+  if (jobCand) {
+    const jobId = jobCand[1];
+
+    if (method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return err(400, 'Invalid JSON'); }
+      const list = body.candidates;
+      if (!Array.isArray(list)) return err(400, 'candidates must be array');
+      for (const c of list) {
+        const dedup = c.dedup_key || `${c.name}|${c.company}`;
+        await env.DB.prepare(
+          'INSERT OR REPLACE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons) VALUES(?,?,?,?,?,?,?,?,?,?,?)'
+        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[])).run();
+      }
+      return ok({ ok: true, count: list.length });
+    }
+
+    if (method === 'GET') {
+      const rows = await env.DB.prepare(
+        'SELECT name,first_name,last_name,company,title,linkedin_url,score,reasons FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
+      ).bind(uid, jobId).all();
+      return ok(rows.results.map(r => ({
+        name: r.name,
+        firstName: r.first_name,
+        lastName: r.last_name,
+        company: r.company,
+        title: r.title,
+        url: r.linkedin_url,
+        score: r.score,
+        reasons: JSON.parse(r.reasons || '[]'),
+      })));
+    }
+
+    if (method === 'DELETE') {
+      await env.DB.prepare('DELETE FROM candidates WHERE user_id=? AND job_id=?').bind(uid, jobId).run();
+      return ok({ ok: true });
+    }
+  }
+
+  // CSV export of kept candidates for a job
+  const jobExport = path.match(/^\/api\/jobs\/([^/]+)\/export\.csv$/);
+  if (jobExport && method === 'GET') {
+    const jobId = jobExport[1];
+    const keptRows = await env.DB.prepare(
+      'SELECT candidate_key FROM decisions WHERE user_id=? AND action=?'
+    ).bind(uid, 'kept').all();
+    const keptSet = new Set(keptRows.results.map(r => r.candidate_key));
+    const cands = await env.DB.prepare(
+      'SELECT name,company,title,linkedin_url,score,reasons FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
+    ).bind(uid, jobId).all();
+    const kept = cands.results.filter(c => keptSet.has(`${c.name}|${c.company}`));
+    const rows = [['Name','Title','Company','Score','LinkedIn','Reasons']];
+    kept.forEach(c => rows.push([
+      c.name, c.title, c.company, String(c.score), c.linkedin_url,
+      JSON.parse(c.reasons||'[]').join(' | ')
+    ]));
+    const csv = '﻿' + rows.map(r =>
+      r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')
+    ).join('\n');
+    const slug = jobId.replace(/[^a-z0-9]/gi,'-').toLowerCase().slice(0,40);
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv;charset=utf-8',
+        'Content-Disposition': `attachment; filename="kept-${slug}.csv"`,
+      },
+    });
   }
 
   // blocks (terms + hidden patterns combined)
