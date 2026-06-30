@@ -206,6 +206,9 @@ body{min-height:100vh}
       </div>
       <button class="btn-ghost" onclick="showScreen('settings')">⚙ Settings</button>
     </div>
+    <div id="job-search-wrap" style="display:none;margin-bottom:16px">
+      <input type="search" id="job-search" class="add-job-input" placeholder="Filter roles…" style="width:100%;font-size:14px" oninput="filterJobs(this.value)">
+    </div>
     <div id="job-list"></div>
   </div>
 </div>
@@ -571,35 +574,44 @@ async function applyCSV(text){
 // ═══════════════════════════════════════════════════════════════════
 // PICKER
 // ═══════════════════════════════════════════════════════════════════
-function renderPicker(){
+let _jobFilter='';
+function filterJobs(q){_jobFilter=q.toLowerCase().trim();renderJobCards()}
+function _jobCard(job){
   const ht=settings.hotThreshold;
+  const jid=job.id;
+  const cnts=candidateCounts[jid]||{total:0,hot:0,warm:0};
+  const total=cnts.total||0;
+  const scored=scoredByJob[jid];
+  const hot=scored?scored.filter(c=>adjustedScore(c)>=ht).length:(cnts.hot||0);
+  const warm=scored?scored.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length:(cnts.warm||0);
+  const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
+  const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
+  const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
+  const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">${job.live?'0 candidates':'No candidates yet — drop a CSV'}</span>`:'';
+  const meta=job.live&&job.department?`<div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(job.department)}${job.locations&&job.locations.length?' · '+job.locations.slice(0,2).map(esc).join(', '):''}</div>`:'';
+  return`<div class="job-card" onclick="openJob('${esc(jid)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div>${meta}<div class="job-card-counts">${hotB}${warmB}${totalB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
+}
+function renderJobCards(){
+  const q=_jobFilter;
+  const fl=q?liveJobs.filter(j=>j.title.toLowerCase().includes(q)):liveJobs;
+  const fc=q?customJobs.filter(j=>j.title.toLowerCase().includes(q)):customJobs;
+  if(q&&!fl.length&&!fc.length){document.getElementById('job-list').innerHTML=`<div style="text-align:center;padding:32px;color:var(--text-3)">No roles match "${esc(q)}"</div>`;return}
+  const liveSec=fl.length?`<div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Open at GitGuardian</div>`:'';
+  const custSec=fc.length?`<div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin:20px 0 10px">Custom roles</div>`:'';
+  document.getElementById('job-list').innerHTML=liveSec+fl.map(j=>_jobCard({...j,live:true})).join('')+custSec+fc.map(j=>_jobCard({...j,live:false})).join('');
+}
+function renderPicker(){
   if(allJobs.length===0){
     document.getElementById('picker-sub').textContent='Get started by adding your first role';
+    document.getElementById('job-search-wrap').style.display='none';
     document.getElementById('job-list').innerHTML=`<div style="text-align:center;padding:48px 24px;border:2px dashed var(--border);border-radius:12px;background:var(--surface)"><div style="font-size:36px;margin-bottom:14px">📋</div><div style="font-size:18px;font-weight:700;margin-bottom:6px">No roles yet</div><div style="font-size:14px;color:var(--text-2);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto">Type a GitGuardian role name — suggestions will appear as you type.</div><div style="display:flex;gap:8px;max-width:380px;margin:0 auto"><input class="add-job-input" type="text" id="empty-job-input" list="gg-jobs-list" placeholder="e.g. Security Engineer" style="flex:1" onkeydown="if(event.key==='Enter')addJobFromEmpty()" oninput="onEmptyJobInput(this.value)"><datalist id="gg-jobs-list"></datalist><button class="btn-add" onclick="addJobFromEmpty()">Add</button></div></div>`;
     loadEmptyLiveJobs();
     setTimeout(()=>{const inp=document.getElementById('empty-job-input');if(inp)inp.focus()},50);
     return;
   }
   document.getElementById('picker-sub').textContent=`${allJobs.length} open role${allJobs.length===1?'':'s'}`;
-  const card=job=>{
-    const jid=job.id;
-    const cnts=candidateCounts[jid]||{total:0,hot:0,warm:0};
-    const total=cnts.total||0;
-    const scored=scoredByJob[jid];
-    const hot=scored?scored.filter(c=>adjustedScore(c)>=ht).length:(cnts.hot||0);
-    const warm=scored?scored.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length:(cnts.warm||0);
-    const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
-    const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
-    const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
-    const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">${job.live?'0 candidates':'No candidates yet — drop a CSV'}</span>`:'';
-    const meta=job.live&&job.department?`<div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(job.department)}${job.locations&&job.locations.length?' · '+job.locations.slice(0,2).map(esc).join(', '):''}</div>`:'';
-    return`<div class="job-card" onclick="openJob('${esc(jid)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div>${meta}<div class="job-card-counts">${hotB}${warmB}${totalB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
-  };
-  const liveSec=liveJobs.length?`<div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Open at GitGuardian</div>`:'';
-  const custSec=customJobs.length?`<div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin:20px 0 10px">Custom roles</div>`:'';
-  document.getElementById('job-list').innerHTML=
-    liveSec+liveJobs.map(j=>card({...j,live:true})).join('')+
-    custSec+customJobs.map(j=>card({...j,live:false})).join('');
+  document.getElementById('job-search-wrap').style.display='';
+  renderJobCards();
 }
 async function addJobFromEmpty(){const inp=document.getElementById('empty-job-input');if(!inp)return;const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const{id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderPicker();renderJobsList();showToast('Role added — now click it to drop your CSV')}
 let _emptyLiveCache=[];
