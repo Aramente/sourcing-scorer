@@ -170,7 +170,7 @@ async function handleAPI(request, url, session, env) {
       const list = body.candidates;
       if (!Array.isArray(list)) return err(400, 'candidates must be array');
       for (const c of list) {
-        const dedup = c.dedup_key || `${c.name}|${c.company}`;
+        const dedup = `${c.name}|${c.company}`;
         await env.DB.prepare(
           'INSERT OR REPLACE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons) VALUES(?,?,?,?,?,?,?,?,?,?,?)'
         ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[])).run();
