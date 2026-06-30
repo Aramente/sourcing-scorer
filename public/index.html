@@ -389,7 +389,7 @@ const _famCache=new Map();
 function _normalize(t){let s=t.toLowerCase();s=s.replace(/\([^)]*\)/g,' ');s=s.replace(/[\u{1F000}-\u{1FAFF}☀-➿]/gu,' ');return s}
 function _tokens(t){const n=_normalize(t);return new Set((n.match(_TOKEN_RE)||[]).filter(w=>!NOISE.has(w)&&w.length>1))}
 function _phrasesPresent(t,words){const n=_normalize(t),toks=_tokens(t);let h=0;for(const w of words){if(w.includes(' ')?n.includes(w):toks.has(w))h++}return h}
-function normTitle(t){let n=_normalize(t);if(n.includes('|'))n=n.split('|')[0].trim();n=n.replace(/\s*[,·–—\-|/]\s*(emea|amer|apac|dach|latam|usa|us|uk|france|paris|london|germany|amsterdam|east|west|north|south|remote|hybrid|global|hq|worldwide|international)\b.*/i,'').trim();n=n.replace(/\s+\b(emea|amer|apac|dach|latam|usa|us|uk|germany|france|paris|london|amsterdam|netherlands|belgium|luxembourg|east|west|north|south|remote|hybrid)\b\s*$/i,'').trim();n=n.replace(/^co[-\s]+/i,'').trim();n=n.replace(/^(senior|sr\.?\s|lead|principal|staff|junior|jr\.?\s|associate|founding|entry\s+level)\s+/i,'').trim();n=n.replace(/\s+(senior|sr|junior|jr|confirmé|expérimentée?|expert|autonome|débutant)\s*$/i,'').trim();n=n.replace(/\s+(i{1,3}|iv|[123])\s*$/,'').trim();return n}
+function normTitle(t){let n=_normalize(t);if(n.includes('|'))n=n.split('|')[0].trim();n=n.replace(/\s*[,·–—\-|/]\s*(emea|amer|apac|dach|latam|usa|us|uk|france|paris|london|germany|amsterdam|east|west|north|south|remote|hybrid|global|hq|worldwide|international)\b.*/i,'').trim();n=n.replace(/\s+\b(emea|amer|apac|dach|latam|usa|us|uk|germany|france|paris|london|amsterdam|netherlands|belgium|luxembourg|east|west|north|south|remote|hybrid)\b\s*$/i,'').trim();n=n.replace(/^co[-\s]+/i,'').trim();n=n.replace(/^(senior|sr\.?\s|lead|principal|staff|junior|jr\.?\s|associate|founding|entry\s+level)\s+/i,'').trim();n=n.replace(/\s+\b(senior|sr|lead|principal|staff|junior|jr|associate)\b\s+/gi,' ').replace(/\s+/g,' ').trim();n=n.replace(/\s+(senior|sr|junior|jr|confirmé|expérimentée?|expert|autonome|débutant)\s*$/i,'').trim();n=n.replace(/\s+(i{1,3}|iv|[123])\s*$/,'').trim();return n}
 function famTop2(t){if(_famCache.has(t))return _famCache.get(t);const tl=normTitle(t);const mapped=TITLE_MAP[tl];if(mapped!==undefined){const r=Array.isArray(mapped)?mapped:[mapped];_famCache.set(t,r);return r}const scoreText=t.includes('|')?t.split('|')[0].trim():t;const rows=[];for(const[f,w]of Object.entries(ROLE_FAMILIES)){const s=_phrasesPresent(scoreText,w);if(s>0)rows.push([f,s])}if(!rows.length){_famCache.set(t,[]);return[]}rows.sort((a,b)=>b[1]-a[1]);const top=rows[0][1];const r=rows.filter(([,s],i)=>i===0||(i===1&&s*2>=top)).map(([f])=>f);_famCache.set(t,r);return r}
 function inferSeniority(t){const n=_normalize(t);for(const[phrase,band]of _SENIORITY_PHRASE_OVERRIDES){if(n.includes(phrase))return band}const wds=n.split(/\s+/);for(const band of['exec','lead','senior','junior']){for(const w of SENIORITY[band]){if(w.includes(' ')?n.includes(w):wds.includes(w))return band}}return'mid'}
 function _securityOverlap(t){const toks=_tokens(t),n=_normalize(t);for(const h of SECURITY_HINTS){if(h.includes(' ')?n.includes(h):toks.has(h))return true}return false}
@@ -439,12 +439,12 @@ function rebuildAllJobs(){
 
 async function loadState(){
   const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts,prefData]=await Promise.all([
-    fetch('/api/decisions').then(r=>r.json()),
-    fetch('/api/blocks').then(r=>r.json()),
-    fetch('/api/refine').then(r=>r.json()),
-    fetch('/api/jobs').then(r=>r.json()),
-    fetch('/api/settings').then(r=>r.json()),
-    fetch('/api/me').then(r=>r.json()),
+    fetch('/api/decisions').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/blocks').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/refine').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/jobs').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/settings').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/me').then(r=>r.json()).catch(()=>({})),
     fetch('/api/jobs/live').then(r=>r.json()).catch(()=>[]),
     fetch('/api/candidates/counts').then(r=>r.json()).catch(()=>({})),
     fetch('/api/preferred-companies').then(r=>r.json()).catch(()=>[]),
@@ -475,7 +475,7 @@ function saveSettings(){fetch('/api/settings',{method:'PUT',headers:{'Content-Ty
 // ═══════════════════════════════════════════════════════════════════
 function ckey(c){return c.name+'|'+c.company}
 function companyReputation(company){if(!company)return 0;let kept=0,skipped=0;for(const list of Object.values(scoredByJob)){for(const c of list){if(c.company!==company)continue;const d=decisions[ckey(c)];if(d==='kept')kept++;else if(d==='excl')skipped++}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
-function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}for(const[key,c]of prefMap){if(n.includes(key)||key.includes(n))return c.tier===1?15:10}return 0}
+function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}for(const[key,c]of prefMap){if(key.length>=4&&(n.includes(key)||key.includes(n)))return c.tier===1?15:10}return 0}
 function adjustedScore(c){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)}
 
 // ═══════════════════════════════════════════════════════════════════
@@ -483,7 +483,7 @@ function adjustedScore(c){return c.score+companyReputation(c.company)+companyPre
 // ═══════════════════════════════════════════════════════════════════
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings()}
-function settingsBack(){showScreen(_prevScreen)}
+function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')renderList()}
 let _toastTimer;
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>t.classList.add('hidden'),2500)}
 function isBlocked(co){const n=(co||'').toLowerCase();return blockedTerms.some(t=>n.includes(t.toLowerCase()))}
@@ -553,12 +553,12 @@ function renderPicker(){
     const jid=job.id;
     const total=candidateCounts[jid]||0;
     const scored=scoredByJob[jid]||[];
-    const hot=scored.filter(c=>c.score>=ht).length;
-    const warm=scored.filter(c=>c.score>=POSSIBLE&&c.score<ht).length;
+    const hot=scored.filter(c=>adjustedScore(c)>=ht).length;
+    const warm=scored.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length;
     const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
     const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
     const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
-    const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">No candidates yet — drop a CSV</span>`:'';
+    const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">${job.live?'0 candidates':'No candidates yet — drop a CSV'}</span>`:'';
     const meta=job.live&&job.department?`<div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(job.department)}${job.locations&&job.locations.length?' · '+job.locations.slice(0,2).map(esc).join(', '):''}</div>`:'';
     return`<div class="job-card" onclick="openJob('${esc(jid)}')"><div class="job-card-info"><div class="job-card-title">${esc(job.title)}</div>${meta}<div class="job-card-counts">${hotB}${warmB}${totalB}${noneB}</div></div><div class="job-card-arrow">›</div></div>`;
   };
@@ -616,14 +616,14 @@ function renderList(){
     if(decFilter==='kept'&&d!=='kept')return false;
     if(decFilter==='excl'&&d!=='excl')return false;
     if(decFilter==='undet'&&d!=='undet')return false;
-    if(!showWarm&&c.score<ht)return false;
+    if(!showWarm&&adjustedScore(c)<ht)return false;
     return true;
   });
   const totalPages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE));
   if(currentPage>totalPages)currentPage=totalPages;
   const pageSlice=visible.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
-  const hotCount=all.filter(c=>c.score>=ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
-  const warmCount=all.filter(c=>c.score>=POSSIBLE&&c.score<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const hotCount=all.filter(c=>adjustedScore(c)>=ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const warmCount=all.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
   const keptCount=all.filter(c=>decisions[ckey(c)]==='kept').length;
   const sklCount=all.filter(c=>decisions[ckey(c)]==='excl').length;
   document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped`;
@@ -684,7 +684,10 @@ function openAllKept(){
   urls.forEach(u=>window.open(u,'_blank','noopener,noreferrer'));
 }
 function downloadKeptCSV(){
-  window.location.href=`/api/jobs/${currentJobId}/export.csv`;
+  fetch(`/api/jobs/${currentJobId}/export.csv`)
+    .then(r=>{if(!r.ok)throw r.status;return r.blob()})
+    .then(b=>{const a=document.createElement('a');const u=URL.createObjectURL(b);a.href=u;a.download=`kept-${currentJobId}.csv`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u)})
+    .catch(()=>showToast('Export failed'));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -765,6 +768,7 @@ async function addPrefCompany(){
   const inp=document.getElementById('add-pref-input');
   const name=inp.value.trim();if(!name)return;
   const tier=parseInt(document.getElementById('add-pref-tier').value)||2;
+  if(preferredCompanies.some(c=>c.name.toLowerCase()===name.toLowerCase())){showToast('Already in preferred companies');return}
   const res=await fetch('/api/preferred-companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,tier,category:'custom'})});
   if(!res.ok){showToast('Failed to add');return}
   preferredCompanies.push({name,tier,category:'custom'});
@@ -781,6 +785,6 @@ async function removePrefCompany(name){
 // ═══════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════
-loadState().then(()=>renderPicker());
+loadState().then(()=>renderPicker()).catch(()=>showToast('Failed to load — please refresh'));
 </script>
 </html>

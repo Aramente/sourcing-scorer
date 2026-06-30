@@ -1,4 +1,6 @@
 const SESSION_NAME = 'ss_session';
+let _liveJobsCache = null, _liveJobsCacheAt = 0;
+const LIVE_CACHE_MS = 5 * 60_000;
 const SESSION_MS = 7 * 86400_000;
 
 // ── password ──────────────────────────────────────────────────────
@@ -6,7 +8,7 @@ async function hashPassword(plain, salt) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(plain), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    {name:'PBKDF2', salt:enc.encode(salt), iterations:100_000, hash:'SHA-256'},
+    {name:'PBKDF2', salt:enc.encode(salt), iterations:10_000, hash:'SHA-256'},
     key, 256
   );
   return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -93,6 +95,7 @@ async function handleAPI(request, url, session, env) {
     if (method==='POST') {
       const {key,action} = await request.json();
       if (!key) return err(400,'Missing key');
+      if (action && action !== 'kept' && action !== 'excl') return err(400,'Invalid action');
       if (!action) await env.DB.prepare('DELETE FROM decisions WHERE user_id=? AND candidate_key=?').bind(uid,key).run();
       else await env.DB.prepare('INSERT OR REPLACE INTO decisions (user_id,candidate_key,action) VALUES(?,?,?)').bind(uid,key,action).run();
       return ok({ok:true});
@@ -120,12 +123,16 @@ async function handleAPI(request, url, session, env) {
 
   // live Teamtailor jobs — must come before /api/jobs to avoid prefix collision
   if (path==='/api/jobs/live' && method==='GET') {
+    const now = Date.now();
+    if (_liveJobsCache && now - _liveJobsCacheAt < LIVE_CACHE_MS) return ok(_liveJobsCache);
     try {
       const res = await fetch('https://careers.gitguardian.com/jobs.json');
       const data = await res.json();
-      return ok(data.items || []);
+      _liveJobsCache = data.items || [];
+      _liveJobsCacheAt = now;
+      return ok(_liveJobsCache);
     } catch {
-      return ok([]);
+      return ok(_liveJobsCache || []);
     }
   }
 
@@ -169,12 +176,14 @@ async function handleAPI(request, url, session, env) {
       try { body = await request.json(); } catch { return err(400, 'Invalid JSON'); }
       const list = body.candidates;
       if (!Array.isArray(list)) return err(400, 'candidates must be array');
-      for (const c of list) {
+      if (!list.length) return ok({ ok: true, count: 0 });
+      const stmts = list.map(c => {
         const dedup = `${c.name}|${c.company}`;
-        await env.DB.prepare(
+        return env.DB.prepare(
           'INSERT OR REPLACE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons) VALUES(?,?,?,?,?,?,?,?,?,?,?)'
-        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[])).run();
-      }
+        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[]));
+      });
+      await env.DB.batch(stmts);
       return ok({ ok: true, count: list.length });
     }
 
@@ -263,23 +272,23 @@ async function handleAPI(request, url, session, env) {
     }
   }
 
-  // preferred companies (shared, not per-user)
+  // preferred companies (shared defaults + per-user custom)
   if (path==='/api/preferred-companies') {
     if (method==='GET') {
-      const rows = await env.DB.prepare('SELECT name,tier,category FROM preferred_companies ORDER BY tier,name').all();
+      const rows = await env.DB.prepare('SELECT name,tier,category FROM preferred_companies WHERE user_id=? OR user_id=? ORDER BY tier,name').bind('',uid).all();
       return ok(rows.results);
     }
     if (method==='POST') {
       let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
       const {name,tier=2,category='custom'} = body;
       if (!name) return err(400,'Missing name');
-      await env.DB.prepare('INSERT OR REPLACE INTO preferred_companies (name,tier,category) VALUES(?,?,?)').bind(name.trim(),parseInt(tier)||2,category||'custom').run();
+      await env.DB.prepare('INSERT OR REPLACE INTO preferred_companies (user_id,name,tier,category) VALUES(?,?,?,?)').bind(uid,name.trim(),parseInt(tier)||2,category||'custom').run();
       return ok({ok:true});
     }
   }
   const prefDel = path.match(/^\/api\/preferred-companies\/(.+)$/);
   if (prefDel && method==='DELETE') {
-    await env.DB.prepare('DELETE FROM preferred_companies WHERE name=?').bind(decodeURIComponent(prefDel[1])).run();
+    await env.DB.prepare('DELETE FROM preferred_companies WHERE user_id=? AND name=?').bind(uid,decodeURIComponent(prefDel[1])).run();
     return ok({ok:true});
   }
 
@@ -328,10 +337,12 @@ button:hover{background:#1e40af}
 <script>
 document.getElementById('f').addEventListener('submit',async e=>{
   e.preventDefault();
+  const btn=e.target.querySelector('button[type=submit]');
+  btn.disabled=true;
   const fd=new FormData(e.target);
   const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:fd.get('username'),password:fd.get('password')})});
   if(res.ok)location.href='/';
-  else{const er=document.getElementById('er');er.textContent='Invalid username or password';er.style.display='block';}
+  else{const er=document.getElementById('er');er.textContent='Invalid username or password';er.style.display='block';btn.disabled=false;}
 });
 </script>
 </body>
