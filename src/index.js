@@ -168,6 +168,35 @@ async function handleAPI(request, url, session, env) {
     return ok({ok:true});
   }
 
+  // imports per job (must come before /candidates to avoid partial-match issues)
+  const jobImports = path.match(/^\/api\/jobs\/([^/]+)\/imports$/);
+  if (jobImports) {
+    const jobId = jobImports[1];
+    if (method === 'GET') {
+      const s = await env.DB.prepare('SELECT hot_threshold FROM user_settings WHERE user_id=?').bind(uid).first();
+      const ht = s?.hot_threshold ?? 65;
+      const rows = await env.DB.prepare(
+        `SELECT c.import_name, MIN(c.import_date) as import_date, COUNT(*) as total,
+          SUM(CASE WHEN c.score >= ? THEN 1 ELSE 0 END) as hot,
+          SUM(CASE WHEN c.score >= 40 AND c.score < ? THEN 1 ELSE 0 END) as warm,
+          SUM(CASE WHEN d.action = 'kept' THEN 1 ELSE 0 END) as kept,
+          SUM(CASE WHEN d.action = 'excl' THEN 1 ELSE 0 END) as skipped,
+          SUM(CASE WHEN d.action = 'view' THEN 1 ELSE 0 END) as viewed
+        FROM candidates c
+        LEFT JOIN decisions d ON d.user_id = c.user_id AND d.candidate_key = c.job_id || '::' || c.name || '|' || c.company
+        WHERE c.user_id = ? AND c.job_id = ?
+        GROUP BY c.import_name ORDER BY MIN(c.import_date) ASC`
+      ).bind(ht, ht, uid, jobId).all();
+      return ok(rows.results);
+    }
+    if (method === 'DELETE') {
+      let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+      const importName = (body.importName ?? '');
+      await env.DB.prepare('DELETE FROM candidates WHERE user_id=? AND job_id=? AND import_name=?').bind(uid, jobId, importName).run();
+      return ok({ ok: true });
+    }
+  }
+
   // candidate CRUD per job
   const jobCand = path.match(/^\/api\/jobs\/([^/]+)\/candidates$/);
   if (jobCand) {
@@ -177,21 +206,24 @@ async function handleAPI(request, url, session, env) {
       let body;
       try { body = await request.json(); } catch { return err(400, 'Invalid JSON'); }
       const list = body.candidates;
+      const importName = (body.importName || '').trim().slice(0, 120);
+      const importDate = Date.now();
       if (!Array.isArray(list)) return err(400, 'candidates must be array');
-      if (!list.length) return ok({ ok: true, count: 0 });
+      if (!list.length) return ok({ ok: true, count: 0, skipped: 0 });
       const stmts = list.map(c => {
         const dedup = `${c.name}|${c.company}`;
         return env.DB.prepare(
-          'INSERT OR REPLACE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons) VALUES(?,?,?,?,?,?,?,?,?,?,?)'
-        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[]));
+          'INSERT OR IGNORE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name,import_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[]), importName, importDate);
       });
-      await env.DB.batch(stmts);
-      return ok({ ok: true, count: list.length });
+      const results = await env.DB.batch(stmts);
+      const count = results.reduce((s, r) => s + (r.meta?.changes || 0), 0);
+      return ok({ ok: true, count, skipped: list.length - count });
     }
 
     if (method === 'GET') {
       const rows = await env.DB.prepare(
-        'SELECT name,first_name,last_name,company,title,linkedin_url,score,reasons FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
+        'SELECT name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
       ).bind(uid, jobId).all();
       return ok(rows.results.map(r => ({
         name: r.name,
@@ -202,6 +234,7 @@ async function handleAPI(request, url, session, env) {
         url: r.linkedin_url,
         score: r.score,
         reasons: JSON.parse(r.reasons || '[]'),
+        importName: r.import_name || '',
       })));
     }
 

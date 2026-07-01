@@ -185,6 +185,18 @@ body{min-height:100vh}
 .btn-block-global:hover{background:var(--red-dim)}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
 .toast.hidden{opacity:0}
+/* ── IMPORTS ── */
+#screen-imports{max-width:680px;margin:0 auto;padding:48px 24px 80px}
+.import-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:18px 22px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:16px;transition:border-color .15s,box-shadow .15s}
+.import-card:hover{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-dim)}
+.import-card-all{border-color:var(--border-s);background:var(--blue-dim);margin-bottom:16px}
+.import-card-all:hover{border-color:var(--blue)}
+.import-card-info{flex:1;min-width:0}
+.import-card-name{font-size:15px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.import-card-meta{font-size:12px;color:var(--text-3);margin-bottom:6px}
+.import-card-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.btn-del-import{font:inherit;font-size:15px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:3px 7px;border-radius:6px;transition:color .12s,background .12s;line-height:1}
+.btn-del-import:hover{color:var(--red);background:var(--red-dim)}
 /* ── USER BANNER ── */
 #user-banner{position:fixed;top:0;right:0;z-index:1000;padding:6px 14px;display:flex;align-items:center;gap:10px;font-size:12px;color:#94A3B8}
 #user-banner form{margin:0}
@@ -195,6 +207,25 @@ body{min-height:100vh}
 <div id="user-banner">
   <span id="user-display"></span>
   <form action="/api/auth/logout" method="post"><button type="submit">Sign out</button></form>
+</div>
+
+<!-- IMPORTS -->
+<div id="screen-imports" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <button class="btn-back" onclick="showScreen('picker')">← Jobs</button>
+      <div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:3px">Imports</div>
+        <div id="imports-job-title" style="font-size:20px;font-weight:700;letter-spacing:-.01em"></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <input type="file" id="imports-file-input" accept=".csv,.txt" style="display:none">
+      <button class="btn-add" onclick="document.getElementById('imports-file-input').click()">+ Import CSV</button>
+      <button class="btn-ghost" onclick="showScreen('settings')">⚙</button>
+    </div>
+  </div>
+  <div id="imports-list"></div>
 </div>
 
 <!-- PICKER -->
@@ -218,7 +249,7 @@ body{min-height:100vh}
 <!-- TRIAGE -->
 <div id="screen-triage" class="screen">
   <div class="triage-header">
-    <button class="btn-back" onclick="showScreen('picker')">← Jobs</button>
+    <button class="btn-back" onclick="showScreen('imports');renderImports()">← Imports</button>
     <div class="triage-job-title" id="triage-job-title"></div>
     <div class="triage-stats" id="triage-stats"></div>
     <button class="btn-ghost" onclick="showScreen('settings')">⚙</button>
@@ -234,6 +265,7 @@ body{min-height:100vh}
   </div>
   <div class="triage-controls" id="triage-controls"></div>
   <div id="blocked-chips"></div>
+  <div id="filter-warn"></div>
   <div id="cand-list"></div>
   <div id="pager"></div>
   <div class="fab-group">
@@ -469,6 +501,7 @@ let preferredCompanies=[],prefMap=new Map();
 let liveJobs=[],customJobs=[],allJobs=[];
 let candidateCounts={};
 let scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all';
+let currentImportName=null,importsCache={};
 const PAGE_SIZE=30;
 let _prevScreen='picker';
 
@@ -518,7 +551,7 @@ function saveSettings(){fetch('/api/settings',{method:'PUT',headers:{'Content-Ty
 // ═══════════════════════════════════════════════════════════════════
 function ckey(c){return c.name+'|'+c.company}
 function dkey(jid,c){return jid+'::'+ckey(c)}
-function companyReputation(company){if(!company)return 0;let kept=0,skipped=0;for(const[jid,list]of Object.entries(scoredByJob)){for(const c of list){if(c.company!==company)continue;const d=decisions[dkey(jid,c)];if(d==='kept')kept++;else if(d==='excl')skipped++}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
+function companyReputation(company){if(!company)return 0;const co=company.toLowerCase();let kept=0,skipped=0;for(const[k,v]of Object.entries(decisions)){if(v!=='kept'&&v!=='excl')continue;const sep=k.indexOf('::');if(sep===-1)continue;const cpart=k.slice(sep+2);const pipe=cpart.lastIndexOf('|');if(pipe===-1)continue;const dc=cpart.slice(pipe+1).toLowerCase();if(dc===co){if(v==='kept')kept++;else skipped++;}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
 function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}for(const[key,c]of prefMap){if(key.length>=4&&(n.includes(key)||key.includes(n)))return c.tier===1?15:10}return 0}
 function adjustedScore(c){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)}
 
@@ -527,7 +560,7 @@ function adjustedScore(c){return c.score+companyReputation(c.company)+companyPre
 // ═══════════════════════════════════════════════════════════════════
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings()}
-function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')renderList()}
+function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')renderList();if(_prevScreen==='imports')renderImports()}
 let _toastTimer;
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>t.classList.add('hidden'),2500)}
 function isBlocked(co){const n=(co||'').toLowerCase();return blockedTerms.some(t=>n.includes(t.toLowerCase()))}
@@ -550,12 +583,13 @@ function initUpload(){
 function triggerUpload(){document.getElementById('file-input').click()}
 function handleFile(file){
   if(!file)return;
+  const importName=(file.name||'Import').replace(/\.[^.]+$/,'').trim()||'Import';
   document.getElementById('upload-error').style.display='none';
   const reader=new FileReader();
-  reader.onload=e=>applyCSV(e.target.result);
+  reader.onload=e=>applyCSV(e.target.result,importName);
   reader.readAsText(file,'utf-8');
 }
-async function applyCSV(text){
+async function applyCSV(text,importName){
   const errEl=document.getElementById('upload-error');
   const parsed=parseCSV(text);
   const fmt=detectFormat(parsed.headers);
@@ -571,13 +605,14 @@ async function applyCSV(text){
     }
   }
   if(!toSave.length){showToast('No matching candidates found');return}
-  const res=await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave})});
+  const res=await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave,importName})});
   if(!res.ok){errEl.textContent='Failed to save candidates.';errEl.style.display='block';return}
-  const {count}=await res.json();
+  const {count,skipped}=await res.json();
   const fresh=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>r.json()).catch(()=>null);
   if(Array.isArray(fresh)){scoredByJob[currentJobId]=fresh;const ht=settings.hotThreshold;candidateCounts[currentJobId]={total:fresh.length,hot:fresh.filter(c=>adjustedScore(c)>=ht).length,warm:fresh.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};}
-  showToast(`Saved ${count} candidates`);
-  renderList();
+  showToast(`${count} added${skipped?' · '+skipped+' duplicate'+(skipped>1?'s':'')+' skipped':''}`);
+  await refreshImports();
+  showScreen('imports');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -591,10 +626,11 @@ function _jobCard(job){
   const cnts=candidateCounts[jid]||{total:0,hot:0,warm:0};
   const total=cnts.total||0;
   const scored=scoredByJob[jid];
+  const approx=!scored;
   const hot=scored?scored.filter(c=>adjustedScore(c)>=ht).length:(cnts.hot||0);
   const warm=scored?scored.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length:(cnts.warm||0);
-  const hotB=hot?`<span class="count-badge count-hot">${hot} HOT</span>`:'';
-  const warmB=warm?`<span class="count-badge count-warm">+${warm} WARM</span>`:'';
+  const hotB=hot?`<span class="count-badge count-hot">${approx?'~':''}${hot} HOT</span>`:'';
+  const warmB=warm?`<span class="count-badge count-warm">${approx?'~':'+'}${warm} WARM</span>`:'';
   const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
   const noneB=(!total&&!hot&&!warm)?`<span class="count-badge count-zero">${job.live?'0 candidates':'No candidates yet — drop a CSV'}</span>`:'';
   const meta=job.live&&job.department?`<div style="font-size:12px;color:var(--text-3);margin-top:2px">${esc(job.department)}${job.locations&&job.locations.length?' · '+job.locations.slice(0,2).map(esc).join(', '):''}</div>`:'';
@@ -643,22 +679,64 @@ function onEmptyJobInput(val){
 // TRIAGE
 // ═══════════════════════════════════════════════════════════════════
 async function openJob(jobId){
-  currentJobId=jobId;currentPage=1;showWarm=false;decFilter='all';
+  currentJobId=jobId;currentImportName=null;
   const job=allJobs.find(j=>j.id===jobId);
-  document.getElementById('triage-job-title').textContent=job?job.title:jobId;
+  document.getElementById('imports-job-title').textContent=job?job.title:jobId;
+  showScreen('imports');
+  document.getElementById('imports-list').innerHTML='<div style="text-align:center;padding:32px;color:var(--text-3)">Loading…</div>';
+  await refreshImports();
+}
+async function refreshImports(){
+  const data=await apiFetch(`/api/jobs/${currentJobId}/imports`,[]);
+  importsCache[currentJobId]=Array.isArray(data)?data:[];
+  renderImports();
+}
+function renderImports(){
+  const imports=importsCache[currentJobId]||[];
+  if(!imports.length){
+    document.getElementById('imports-list').innerHTML=`<div style="text-align:center;padding:48px 24px;border:2px dashed var(--border);border-radius:12px;background:var(--white)"><div style="font-size:36px;margin-bottom:14px">📂</div><div style="font-size:18px;font-weight:700;margin-bottom:8px">No imports yet</div><div style="font-size:14px;color:var(--text-2)">Click "+ Import CSV" to get started</div></div>`;
+    return;
+  }
+  const tot=imports.reduce((a,i)=>({total:a.total+i.total,hot:a.hot+(i.hot||0),warm:a.warm+(i.warm||0),kept:a.kept+(i.kept||0),skipped:a.skipped+(i.skipped||0)}),{total:0,hot:0,warm:0,kept:0,skipped:0});
+  const badge=(n,cls,label)=>n?`<span class="count-badge ${cls}">${label||n}</span>`:'';
+  const viewAll=`<div class="import-card import-card-all" onclick="openImport(null)"><div class="import-card-info"><div class="import-card-name">All imports</div><div class="import-card-meta">${imports.length} import${imports.length===1?'':'s'} · ${tot.total} candidates</div><div class="job-card-counts">${badge(tot.hot,'count-hot',tot.hot+' HOT')}${badge(tot.warm,'count-warm','+'+tot.warm+' WARM')}${badge(tot.kept,'','')&&`<span class="count-badge" style="background:var(--green-dim);color:var(--green)">${tot.kept} kept</span>`||''}${badge(tot.skipped,'','')&&`<span class="count-badge" style="background:var(--red-dim);color:var(--red)">${tot.skipped} skipped</span>`||''}</div></div><div class="job-card-arrow">›</div></div>`;
+  const cards=imports.map(imp=>{
+    const dateStr=imp.import_date?new Date(imp.import_date).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
+    const k=imp.kept||0;const sk=imp.skipped||0;
+    return`<div class="import-card" onclick="openImport('${esc(imp.import_name||'')}')"><div class="import-card-info"><div class="import-card-name">${esc(imp.import_name||'Legacy import')}</div><div class="import-card-meta">${[dateStr,imp.total+' candidates'].filter(Boolean).join(' · ')}</div><div class="job-card-counts">${imp.hot?`<span class="count-badge count-hot">~${imp.hot} HOT</span>`:''}${imp.warm?`<span class="count-badge count-warm">~+${imp.warm} WARM</span>`:''}${k?`<span class="count-badge" style="background:var(--green-dim);color:var(--green)">${k} kept</span>`:''}${sk?`<span class="count-badge" style="background:var(--red-dim);color:var(--red)">${sk} skipped</span>`:''}</div></div><div class="import-card-actions"><button class="btn-del-import" data-imp="${esc(imp.import_name||'')}" onclick="event.stopPropagation();deleteImport(this.dataset.imp)" title="Delete import">🗑</button><div class="job-card-arrow">›</div></div></div>`;
+  }).join('');
+  document.getElementById('imports-list').innerHTML=viewAll+cards;
+}
+async function openImport(importName){
+  currentImportName=importName;currentPage=1;showWarm=false;decFilter='all';
+  const job=allJobs.find(j=>j.id===currentJobId);
+  document.getElementById('triage-job-title').textContent=(job?job.title:currentJobId)+(importName?' — '+importName:'');
   showScreen('triage');
   initUpload();
-  if(!scoredByJob[jobId]){
+  if(!scoredByJob[currentJobId]){
     document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--text-3)">Loading…</div>';
-    const data=await fetch(`/api/jobs/${jobId}/candidates`).then(r=>{if(!r.ok)throw r.status;return r.json()}).catch(e=>{showToast('Failed to load candidates — please retry');return null});
-    if(data===null){document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--red)">Failed to load — please try again</div>';return}
-    scoredByJob[jobId]=Array.isArray(data)?data:[];
-    const ht=settings.hotThreshold;const list=scoredByJob[jobId];
-    candidateCounts[jobId]={total:list.length,hot:list.filter(c=>adjustedScore(c)>=ht).length,warm:list.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};
+    const data=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>{if(!r.ok)throw r.status;return r.json()}).catch(()=>null);
+    if(!data){document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--red)">Failed to load — please try again</div>';return}
+    scoredByJob[currentJobId]=Array.isArray(data)?data:[];
+    const ht=settings.hotThreshold;const list=scoredByJob[currentJobId];
+    candidateCounts[currentJobId]={total:list.length,hot:list.filter(c=>adjustedScore(c)>=ht).length,warm:list.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};
   }
   renderList();
 }
-function getCandidatesForJob(){return(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c))}
+async function deleteImport(importName){
+  const label=importName||'Legacy import';
+  if(!confirm(`Delete "${label}" and all its candidates?`))return;
+  const res=await fetch(`/api/jobs/${currentJobId}/imports`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({importName:importName||''})});
+  if(!res.ok){showToast('Delete failed');return}
+  if(scoredByJob[currentJobId]){
+    scoredByJob[currentJobId]=scoredByJob[currentJobId].filter(c=>c.importName!==(importName||''));
+    const ht=settings.hotThreshold;const list=scoredByJob[currentJobId];
+    candidateCounts[currentJobId]={total:list.length,hot:list.filter(c=>adjustedScore(c)>=ht).length,warm:list.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};
+  }
+  showToast(`"${label}" deleted`);
+  await refreshImports();
+}
+function getCandidatesForJob(){const all=(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c));if(currentImportName===null)return all;return all.filter(c=>c.importName===currentImportName)}
 function skippedCandidates(){return getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='excl')}
 
 function renderList(){
@@ -667,6 +745,7 @@ function renderList(){
   const decided=all.filter(c=>decisions[dkey(currentJobId,c)]);
   const undecided=all.filter(c=>!decisions[dkey(currentJobId,c)]);
   undecided.sort((a,b)=>adjustedScore(b)-adjustedScore(a));
+  decided.sort((a,b)=>adjustedScore(b)-adjustedScore(a));
   const pool=[...undecided,...decided];
   const visible=pool.filter(c=>{
     if(isBlocked(c.company))return false;
@@ -676,7 +755,7 @@ function renderList(){
     if(decFilter==='excl'&&d!=='excl')return false;
     if(decFilter==='view'&&d!=='view')return false;
     if(decFilter==='undet'&&d!=='undet')return false;
-    if(!showWarm&&adjustedScore(c)<ht)return false;
+    if(!showWarm&&adjustedScore(c)<ht&&d==='undet')return false;
     return true;
   });
   const totalPages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE));
@@ -703,6 +782,9 @@ function renderList(){
     <button class="ctrl-chip" onclick="triggerUpload()">+ Add more</button>`;
   document.getElementById('blocked-chips').innerHTML=blockedTerms.length
     ?`<div class="blocked-chips">${blockedTerms.map(t=>`<span class="chip">${esc(t)}<span class="chip-x" onclick="unblock('${esc(t)}')">×</span></span>`).join('')}</div>`:'';
+  const allRaw=scoredByJob[currentJobId]||[];
+  const hiddenDecided=allRaw.filter(c=>{const d=decisions[dkey(currentJobId,c)];return d&&d!=='undet'&&!passesFilters(c)}).length;
+  document.getElementById('filter-warn').innerHTML=hiddenDecided?`<div style="font-size:12px;color:var(--amber,#b45309);background:var(--amber-dim,#fef3c7);border:1px solid var(--amber-border,#fde68a);border-radius:8px;padding:8px 12px;margin-bottom:8px">⚠ ${hiddenDecided} decided candidate${hiddenDecided>1?'s are':' is'} hidden by your title filters</div>`:'';
   document.getElementById('cand-list').innerHTML=pageSlice.map(c=>{
     const k=dkey(currentJobId,c);const dec=decisions[k]||'undet';const adj=adjustedScore(c);
     const tier=adj>=ht?'hot':'warm';
@@ -804,7 +886,7 @@ function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.ma
 function updateThreshold(v){settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings()}
 function updateFilter(key,val){settings[key]=val;saveSettings()}
 async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const {id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderJobsList();showToast('Role added')}
-async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);customJobs=jobs;rebuildAllJobs();delete scoredByJob[id];delete candidateCounts[id];if(currentJobId===id){currentJobId=null;_prevScreen='picker'}await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
+async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);customJobs=jobs;rebuildAllJobs();delete scoredByJob[id];delete candidateCounts[id];delete importsCache[id];if(currentJobId===id){currentJobId=null;_prevScreen='picker'}await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
 async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};await fetch('/api/decisions',{method:'DELETE'});renderList();renderPicker();showToast('Decisions cleared')}
 async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
 async function clearCandidates(){
@@ -814,6 +896,7 @@ async function clearCandidates(){
   await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'DELETE'});
   scoredByJob[currentJobId]=[];
   candidateCounts[currentJobId]={total:0,hot:0,warm:0};
+  importsCache[currentJobId]=[];
   renderList();
   renderPicker();
   showToast('Candidates cleared');
@@ -846,6 +929,7 @@ async function removePrefCompany(name){
 // ═══════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════
+document.getElementById('imports-file-input').addEventListener('change',e=>{handleFile(e.target.files[0]);e.target.value=''});
 loadState().then(()=>renderPicker()).catch(()=>showToast('Failed to load — please refresh'));
 </script>
 </html>
