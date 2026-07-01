@@ -719,7 +719,7 @@ function renderList(){
           <div class="cand-title">${esc(c.title)}</div>
           <div class="cand-company">${pref>0?'⭐ ':''}${esc(c.company)}</div>
         </div>
-        <div class="cand-actions">${liBtn}<button class="btn-view${vA}" onclick="decide('${esc(k)}','view')">👁 Viewed</button><button class="btn-keep${kA}" onclick="decide('${esc(k)}','kept')">✓ Keep</button><button class="btn-skip${xA}" onclick="decide('${esc(k)}','excl')">✕ Skip</button></div>
+        <div class="cand-actions">${liBtn}<button class="btn-view${vA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'view')">👁 Viewed</button><button class="btn-keep${kA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'kept')">✓ Keep</button><button class="btn-skip${xA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'excl')">✕ Skip</button></div>
       </div>
       <div class="cand-reasons">${c.reasons.map(r=>`<span class="reason-tag">${esc(r)}</span>`).join('')}</div>
     </div>`;
