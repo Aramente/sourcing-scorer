@@ -7,7 +7,7 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F1F4F8;--white:#FFFFFF;--text:#0F172A;--text-2:#475569;--text-3:#94A3B8;
+  --bg:#F1F4F8;--white:#FFFFFF;--text:#0F172A;--text-2:#475569;--text-3:#64748B;
   --border:#E2E8F0;--border-s:#CBD5E1;
   --blue:#1D4ED8;--blue-dim:#EFF6FF;
   --green:#16A34A;--green-dim:#F0FDF4;
@@ -21,12 +21,9 @@
 html{background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 body{min-height:100vh}
 .screen{display:none}.screen.active{display:block}
+.hidden{display:none!important}
 
 /* ── UPLOAD ── */
-#screen-upload{max-width:560px;margin:0 auto;padding:72px 24px 80px}
-.upload-eyebrow{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:10px}
-.upload-title{font-size:30px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
-.upload-sub{font-size:14px;color:var(--text-2);margin-bottom:32px}
 .drop-zone{border:2px dashed var(--border-s);border-radius:14px;background:var(--white);padding:48px 32px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
 .drop-zone:hover,.drop-zone.over{border-color:var(--blue);background:var(--blue-dim)}
 .drop-zone.over{border-style:solid}
@@ -35,24 +32,9 @@ body{min-height:100vh}
 .drop-link{color:var(--blue);text-decoration:underline}
 .drop-hint{font-size:13px;color:var(--text-3)}
 .drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-.upload-prev{margin-top:16px;background:var(--white);border:1px solid var(--border);border-radius:8px;padding:14px 18px;font-size:13px;color:var(--text-2);display:flex;align-items:center;justify-content:space-between;gap:12px}
-.upload-prev.hidden{display:none}
-.upload-footer{margin-top:20px;display:flex;justify-content:flex-end}
 .btn-ghost{font:inherit;font-size:13px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:4px 0}
 .btn-ghost:hover{color:var(--blue)}
 .upload-error{margin-top:14px;background:var(--red-dim);border:1px solid #FECACA;border-radius:8px;padding:12px 16px;font-size:13px;color:var(--red);display:none}
-
-/* Merge confirm */
-.merge-confirm{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center}
-.merge-confirm.hidden{display:none}
-.merge-box{background:var(--white);border-radius:14px;padding:28px 32px;width:min(440px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.2)}
-.merge-title{font-size:17px;font-weight:700;margin-bottom:8px}
-.merge-sub{font-size:14px;color:var(--text-2);margin-bottom:22px;line-height:1.5}
-.merge-actions{display:flex;gap:10px}
-.btn-merge{font:inherit;font-size:14px;font-weight:600;padding:10px 20px;background:var(--blue);color:#fff;border:none;border-radius:8px;cursor:pointer}
-.btn-merge:hover{background:#1e40af}
-.btn-replace{font:inherit;font-size:14px;font-weight:500;padding:10px 20px;background:var(--white);color:var(--text-2);border:1.5px solid var(--border-s);border-radius:8px;cursor:pointer}
-.btn-replace:hover{border-color:var(--red);color:var(--red)}
 
 /* ── PICKER ── */
 #screen-picker{max-width:680px;margin:0 auto;padding:48px 24px 80px}
@@ -84,15 +66,23 @@ body{min-height:100vh}
 .ctrl-chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
 .ctrl-chip:disabled{opacity:.4;cursor:default}
 .ctrl-sep{width:1px;height:18px;background:var(--border);flex-shrink:0}
-.cand-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:16px 18px;margin-bottom:8px;transition:border-color .12s}
+.cand-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:16px 18px;margin-bottom:8px;transition:border-color .12s,box-shadow .12s}
 .cand-card.decided{opacity:.55}
+.cand-card.selected{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-dim)}
+.btn-block-co{font:inherit;font-size:11px;background:none;border:none;cursor:pointer;opacity:0;transition:opacity .12s;padding:0 2px;vertical-align:baseline}
+.cand-card:hover .btn-block-co,.cand-card.selected .btn-block-co{opacity:.55}
+.btn-block-co:hover{opacity:1!important}
+#kbd-hint{font-size:11px;color:var(--text-3);padding:2px 0 8px;display:flex;align-items:center;gap:8px}
+#kbd-hint kbd{font-family:var(--mono);font-size:10px;background:var(--white);border:1px solid var(--border-s);border-radius:4px;padding:0 4px}
+#kbd-hint button{font:inherit;font-size:12px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:0 4px}
+#kbd-hint button:hover{color:var(--text)}
 .cand-header{display:flex;align-items:flex-start;gap:12px}
 .cand-score{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;min-width:44px;text-align:right;flex-shrink:0}
 .score-hot{color:var(--amber)}.score-warm{color:var(--blue)}
 .cand-meta{flex:1;min-width:0}
 .cand-name{font-size:15px;font-weight:600;margin-bottom:2px}
-.cand-title{font-size:13px;color:var(--text-2);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cand-company{font-size:12px;color:var(--text-3)}
+.cand-title{font-size:14px;color:var(--text-2);margin-bottom:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cand-company{font-size:13px;color:var(--text-2)}
 .cand-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .btn-keep,.btn-skip,.btn-view{font:inherit;font-size:13px;font-weight:500;border-radius:8px;padding:6px 14px;border:1.5px solid;cursor:pointer;transition:all .12s}
 .btn-keep{background:var(--white);border-color:var(--border);color:var(--text-2)}
@@ -118,6 +108,8 @@ body{min-height:100vh}
 .blocked-chips{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 8px}
 .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;background:var(--red-dim);color:var(--red);border:1px solid #FECACA;border-radius:20px;padding:3px 10px}
 .chip-x{cursor:pointer;font-size:14px;line-height:1;opacity:.7}.chip-x:hover{opacity:1}
+.chip-team{background:var(--indigo-dim);color:var(--indigo);border-color:#C7D2FE}
+.chip-share{cursor:pointer;font-size:11px;line-height:1;opacity:.6}.chip-share:hover{opacity:1}
 
 /* ── SETTINGS ── */
 #screen-settings{max-width:560px;margin:0 auto;padding:48px 24px 80px}
@@ -185,6 +177,9 @@ body{min-height:100vh}
 .btn-block-global:hover{background:var(--red-dim)}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
 .toast.hidden{opacity:0}
+.toast.actionable{pointer-events:auto}
+.toast-undo{font:inherit;font-size:12px;font-weight:700;color:#93C5FD;background:none;border:none;cursor:pointer;margin-left:10px;text-decoration:underline;padding:0}
+.toast-undo:hover{color:#BFDBFE}
 /* ── IMPORTS ── */
 #screen-imports{max-width:680px;margin:0 auto;padding:48px 24px 80px}
 .import-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--r);padding:18px 22px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:16px;transition:border-color .15s,box-shadow .15s}
@@ -264,6 +259,7 @@ body{min-height:100vh}
     <div class="upload-error" id="upload-error"></div>
   </div>
   <div class="triage-controls" id="triage-controls"></div>
+  <div id="kbd-hint"></div>
   <div id="blocked-chips"></div>
   <div id="filter-warn"></div>
   <div id="cand-list"></div>
@@ -428,7 +424,7 @@ function _tokens(t){const n=_normalize(t);return new Set((n.match(_TOKEN_RE)||[]
 function _phrasesPresent(t,words){const n=_normalize(t),toks=_tokens(t);let h=0;for(const w of words){if(w.includes(' ')?n.includes(w):toks.has(w))h++}return h}
 function normTitle(t){let n=_normalize(t);if(n.includes('|'))n=n.split('|')[0].trim();n=n.replace(/\s*[,·–—\-|/]\s*(emea|amer|apac|dach|latam|usa|us|uk|france|paris|london|germany|amsterdam|east|west|north|south|remote|hybrid|global|hq|worldwide|international)\b.*/i,'').trim();n=n.replace(/\s+\b(emea|amer|apac|dach|latam|usa|us|uk|germany|france|paris|london|amsterdam|netherlands|belgium|luxembourg|east|west|north|south|remote|hybrid)\b\s*$/i,'').trim();n=n.replace(/^co[-\s]+/i,'').trim();n=n.replace(/^(senior|sr\.?\s|lead|principal|staff|junior|jr\.?\s|associate|founding|entry\s+level)\s+/i,'').trim();n=n.replace(/\s+\b(senior|sr|lead|principal|staff|junior|jr|associate)\b\s+/gi,' ').replace(/\s+/g,' ').trim();n=n.replace(/\s+(senior|sr|junior|jr|confirmé|expérimentée?|expert|autonome|débutant)\s*$/i,'').trim();n=n.replace(/\s+(i{1,3}|iv|[123])\s*$/,'').trim();return n}
 function famTop2(t){if(_famCache.has(t))return _famCache.get(t);const tl=normTitle(t);const mapped=TITLE_MAP[tl];if(mapped!==undefined){const r=Array.isArray(mapped)?mapped:[mapped];_famCache.set(t,r);return r}const scoreText=t.includes('|')?t.split('|')[0].trim():t;const rows=[];for(const[f,w]of Object.entries(ROLE_FAMILIES)){const s=_phrasesPresent(scoreText,w);if(s>0)rows.push([f,s])}if(!rows.length){_famCache.set(t,[]);return[]}rows.sort((a,b)=>b[1]-a[1]);const top=rows[0][1];const r=rows.filter(([,s],i)=>i===0||(i===1&&s*2>=top)).map(([f])=>f);_famCache.set(t,r);return r}
-function inferSeniority(t){const n=_normalize(t);for(const[phrase,band]of _SENIORITY_PHRASE_OVERRIDES){if(n.includes(phrase))return band}const wds=n.split(/\s+/);for(const band of['exec','lead','senior','junior']){for(const w of SENIORITY[band]){if(w.includes(' ')?n.includes(w):wds.includes(w))return band}}return'mid'}
+function inferSeniority(t){const n=_normalize(t);for(const[phrase,band]of _SENIORITY_PHRASE_OVERRIDES){if(n.includes(phrase))return band}const wds=new Set(n.match(_TOKEN_RE)||[]);for(const band of['exec','lead','senior','junior']){for(const w of SENIORITY[band]){if(w.includes(' ')?n.includes(w):wds.has(w))return band}}return'mid'}
 function _securityOverlap(t){const toks=_tokens(t),n=_normalize(t);for(const h of SECURITY_HINTS){if(h.includes(' ')?n.includes(h):toks.has(h))return true}return false}
 function _adjacentFamily(a,b){return _ADJACENT.some(g=>g.has(a)&&g.has(b))}
 function scoreMatch(conn,job){const reasons=[];let score=0;const connFams=famTop2(conn.title);const jobFams=famTop2(job.title);let jobFam=jobFams[0]||null;if(jobFam==='software'&&jobFams.length>1&&_SPECIFIC_FAMS.has(jobFams[1]))jobFam=jobFams[1];const sameFam=Boolean(jobFam&&connFams.includes(jobFam));const adjMatch=!sameFam&&Boolean(jobFam)&&connFams.some(c=>_adjacentFamily(c,jobFam));if(sameFam){score+=48;reasons.push(`same function: ${jobFam.replace(/_/g,' ')}`)}else if(adjMatch){score+=22;reasons.push(`adjacent: ${connFams[0].replace(/_/g,' ')} ≈ ${jobFam.replace(/_/g,' ')}`)}if(sameFam||adjMatch){const connToks=_tokens(conn.title),jobToks=_tokens(job.title);const overlap=[...connToks].filter(t=>jobToks.has(t));if(overlap.length){score+=Math.min(22,8*overlap.length);reasons.push('shared: '+[...overlap].sort().join(', '))}}const cs=inferSeniority(conn.title),js=inferSeniority(job.title);const csIdx=SENIORITY_ORDER.indexOf(cs),jsIdx=SENIORITY_ORDER.indexOf(js);const dist=Math.abs(csIdx-jsIdx),below=csIdx<jsIdx;if(dist===0){score+=13;reasons.push(`seniority fit: ${js}`)}else if(dist===1){if(js==='exec'&&jobFam==='ae_exec'&&cs==='lead'){}else if(below)score+=8;else score+=4;reasons.push(`near seniority: ${cs}→${js}`)}else if(dist===2){if(!below)score-=20;reasons.push(below?`near seniority: ${cs}→${js}`:`seniority gap: ${cs}→${js}`)}else{score-=35;reasons.push(`seniority gap: ${cs}→${js}`)}if(_securityOverlap(conn.title)&&(_securityOverlap(job.title)||jobFam==='security_eng')){score+=10;reasons.push('works in security/cyber')}return{score:Math.min(150,Math.round(score)),reasons}}
@@ -461,8 +457,11 @@ function parseCSV(text){
   }
   if(cur||row.length){row.push(cur);records.push(row)}
   if(!records.length)return{headers:[],rows:[]};
-  const headers=records[0].map(h=>h.trim());
-  const rows=records.slice(1).filter(r=>r.some(v=>v.trim())).map(cols=>{const row={};headers.forEach((h,j)=>{row[h]=(cols[j]||'').trim()});return row});
+  // LinkedIn Connections exports prepend a "Notes:" preamble — scan the first rows for the real header
+  let hi=0;
+  for(let i=0;i<Math.min(records.length,6);i++){if(detectFormat(records[i].map(h=>h.trim()))!=='unknown'){hi=i;break}}
+  const headers=records[hi].map(h=>h.trim());
+  const rows=records.slice(hi+1).filter(r=>r.some(v=>v.trim())).map(cols=>{const row={};headers.forEach((h,j)=>{row[h]=(cols[j]||'').trim()});return row});
   return{headers,rows};
 }
 function detectFormat(headers){
@@ -496,7 +495,7 @@ function rowToConnection(row,fmt){
 // STATE
 // ═══════════════════════════════════════════════════════════════════
 const DEFAULT_SETTINGS={hotThreshold:65,filterCFO:true,filterInterim:true,filterExpertComptable:true};
-let jobs=[],settings={},decisions={},blockedTerms=[],hiddenPatterns=[],refineState={};
+let jobs=[],settings={},decisions={},blockedTerms=[],sharedBlockedTerms=[],hiddenPatterns=[],refineState={};
 let preferredCompanies=[],prefMap=new Map();
 let liveJobs=[],customJobs=[],allJobs=[];
 let candidateCounts={};
@@ -504,6 +503,9 @@ let scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all
 let currentImportName=null,importsCache={};
 const PAGE_SIZE=30;
 let _prevScreen='picker';
+let _selIdx=0,_pageKeys=[],_pageCands=[],_totalPages=1;
+let _lastUndo=null,_decideAt={};
+let _keptOpened=new Set();
 
 function rebuildAllJobs(){
   allJobs=[
@@ -527,6 +529,7 @@ async function loadState(){
   ]);
   decisions=dec;
   blockedTerms=blk.terms||[];
+  sharedBlockedTerms=blk.sharedTerms||[];
   hiddenPatterns=blk.patterns||[];
   refineState=rqs;
   customJobs=Array.isArray(customJobsData)?customJobsData:[];
@@ -541,30 +544,80 @@ async function loadState(){
   if(el)el.textContent=me.name||me.id||'';
 }
 function saveDec(key,action,onError){fetch('/api/decisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,action:action||null})}).then(r=>{if(!r.ok)throw new Error()}).catch(()=>{if(onError)onError();showToast('Save failed — please retry')})}
-function saveBlk(){fetch('/api/blocks',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({terms:blockedTerms,patterns:hiddenPatterns})})}
+// Serialize block saves: each PUT sends the full in-memory list, so overlapping
+// fire-and-forget writes could land out of order and persist a stale (shorter) list.
+let _blkSaveChain=Promise.resolve();
+function saveBlk(){
+  _blkSaveChain=_blkSaveChain.then(()=>
+    fetch('/api/blocks',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({terms:blockedTerms,patterns:hiddenPatterns})})
+      .then(r=>{if(!r.ok)throw 0}).catch(()=>showToast('Failed to save blocks — please retry'))
+  );
+  return _blkSaveChain;
+}
 function saveHPat(){saveBlk()}
 function saveRqs(){fetch('/api/refine',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(refineState)})}
-function saveSettings(){fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)})}
+function saveSettings(){return fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}).catch(()=>{})}
 
 // ═══════════════════════════════════════════════════════════════════
 // SCORING PIPELINE
 // ═══════════════════════════════════════════════════════════════════
-function ckey(c){return c.name+'|'+c.company}
+function ckey(c){return (c.name||c.url||'')+'|'+c.company}
 function dkey(jid,c){return jid+'::'+ckey(c)}
 function companyReputation(company){if(!company)return 0;const co=company.toLowerCase();let kept=0,skipped=0;for(const[k,v]of Object.entries(decisions)){if(v!=='kept'&&v!=='excl')continue;const sep=k.indexOf('::');if(sep===-1)continue;const cpart=k.slice(sep+2);const pipe=cpart.lastIndexOf('|');if(pipe===-1)continue;const dc=cpart.slice(pipe+1).toLowerCase();if(dc===co){if(v==='kept')kept++;else skipped++;}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
-function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}for(const[key,c]of prefMap){if(key.length>=4&&(n.includes(key)||key.includes(n)))return c.tier===1?15:10}return 0}
+function _wordIn(hay,needle,allowPrefix){let i=hay.indexOf(needle);while(i!==-1){const pre=i===0||!/[a-z0-9]/.test(hay[i-1]);const j=i+needle.length;const post=j===hay.length||!/[a-z0-9]/.test(hay[j]);if(pre&&(post||(allowPrefix&&needle.length>=6)))return true;i=hay.indexOf(needle,i+1)}return false}
+function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}let best=0;for(const[key,c]of prefMap){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){const b=c.tier===1?15:10;if(b>best)best=b}}return best}
 function adjustedScore(c){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)}
 
 // ═══════════════════════════════════════════════════════════════════
 // UI HELPERS
 // ═══════════════════════════════════════════════════════════════════
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
-function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings()}
+function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings();_syncHash(name)}
+// ── hash routing: refresh/back-button keep the current screen, job & import ──
+let _navGuard=false;
+function _syncHash(screen){
+  if(_navGuard)return;
+  let h='';
+  if(screen==='imports')h='job/'+encodeURIComponent(currentJobId||'');
+  else if(screen==='triage')h='job/'+encodeURIComponent(currentJobId||'')+'/imp/'+(currentImportName===null?'~all':encodeURIComponent(currentImportName));
+  else if(screen==='settings')h='settings';
+  if(location.hash.slice(1)===h)return;
+  _navGuard=true;location.hash=h;setTimeout(()=>{_navGuard=false},0);
+}
+async function applyHash(){
+  _navGuard=true;
+  try{
+    const h=location.hash.slice(1);
+    if(h.startsWith('job/')){
+      const parts=h.slice(4).split('/imp/');
+      let id=null,imp;
+      try{id=decodeURIComponent(parts[0]);imp=parts.length>1?(parts[1]==='~all'?null:decodeURIComponent(parts[1])):undefined}catch{}
+      if(id&&allJobs.some(j=>j.id===id)){
+        await openJob(id);
+        if(imp!==undefined)await openImport(imp);
+        return;
+      }
+    }
+    if(h==='settings'){showScreen('settings');return}
+    // Stale/unknown hash: normalize without pushing a history entry (avoids a back-button trap)
+    if(h)history.replaceState(null,'',location.pathname+location.search);
+    showScreen('picker');renderPicker();
+  }finally{setTimeout(()=>{_navGuard=false},0)}
+}
+window.addEventListener('hashchange',()=>{if(!_navGuard)applyHash()});
 function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')renderList();if(_prevScreen==='imports')renderImports()}
 let _toastTimer;
-function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>t.classList.add('hidden'),2500)}
-function isBlocked(co){const n=(co||'').toLowerCase();return blockedTerms.some(t=>n.includes(t.toLowerCase()))}
-function isTitleHidden(title){if(isCfoTitle(title)||(settings.filterInterim&&isInterim(title))||(settings.filterExpertComptable&&isExpertComptable(title)))return true;return hiddenPatterns.some(p=>new RegExp(p.regex,'i').test(title))}
+function _hideToast(){const t=document.getElementById('toast');t.classList.add('hidden');t.classList.remove('actionable')}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');t.classList.remove('actionable');clearTimeout(_toastTimer);_toastTimer=setTimeout(_hideToast,2500)}
+function showUndoToast(msg,undoFn){
+  const t=document.getElementById('toast');
+  t.innerHTML=`${esc(msg)}<button class="toast-undo" id="toast-undo-btn">Undo</button>`;
+  t.classList.remove('hidden');t.classList.add('actionable');
+  document.getElementById('toast-undo-btn').onclick=()=>{_hideToast();undoFn()};
+  clearTimeout(_toastTimer);_toastTimer=setTimeout(_hideToast,5000);
+}
+function isBlocked(co){const n=(co||'').toLowerCase();return blockedTerms.some(t=>n.includes(t.toLowerCase()))||sharedBlockedTerms.some(t=>n.includes(t.toLowerCase()))}
+function isTitleHidden(title){if((settings.filterCFO&&isCfoTitle(title))||(settings.filterInterim&&isInterim(title))||(settings.filterExpertComptable&&isExpertComptable(title)))return true;return hiddenPatterns.some(p=>{try{return new RegExp(p.regex,'i').test(title)}catch{return false}})}
 
 // ═══════════════════════════════════════════════════════════════════
 // UPLOAD SCREEN
@@ -598,19 +651,20 @@ async function applyCSV(text,importName){
   if(!job){errEl.textContent='No job selected.';errEl.style.display='block';return}
   const newConns=parsed.rows.map(r=>rowToConnection(r,fmt)).filter(c=>c.title||c.company);
   const toSave=[];
+  let below=0,filtered=0;
   for(const c of newConns){
     const m=scoreMatch(c,job);
-    if(m.score>=POSSIBLE&&passesFilters(c)){
-      toSave.push({name:c.name,first_name:c.firstName||'',last_name:c.lastName||'',company:c.company||'',title:c.title,linkedin_url:c.url||'',dedup_key:ckey(c),score:m.score,reasons:m.reasons});
-    }
+    if(m.score+companyPreferenceBonus(c.company)<POSSIBLE){below++;continue}
+    if(!passesFilters(c)){filtered++;continue}
+    toSave.push({name:c.name,first_name:c.firstName||'',last_name:c.lastName||'',company:c.company||'',title:c.title,linkedin_url:c.url||'',dedup_key:ckey(c),score:m.score,reasons:m.reasons});
   }
-  if(!toSave.length){showToast('No matching candidates found');return}
+  if(!toSave.length){showToast(`No matches in ${parsed.rows.length} rows — ${below} below score ${POSSIBLE}, ${filtered} auto-filtered`);return}
   const res=await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave,importName})});
   if(!res.ok){errEl.textContent='Failed to save candidates.';errEl.style.display='block';return}
   const {count,skipped}=await res.json();
   const fresh=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>r.json()).catch(()=>null);
   if(Array.isArray(fresh)){scoredByJob[currentJobId]=fresh;const ht=settings.hotThreshold;candidateCounts[currentJobId]={total:fresh.length,hot:fresh.filter(c=>adjustedScore(c)>=ht).length,warm:fresh.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};}
-  showToast(`${count} added${skipped?' · '+skipped+' duplicate'+(skipped>1?'s':'')+' skipped':''}`);
+  showToast(`${count} added${skipped?' · '+skipped+' duplicate'+(skipped>1?'s':''):''}${below?' · '+below+' below score '+POSSIBLE:''}${filtered?' · '+filtered+' auto-filtered':''}`);
   await refreshImports();
   showScreen('imports');
 }
@@ -649,7 +703,7 @@ function renderPicker(){
   if(allJobs.length===0){
     document.getElementById('picker-sub').textContent='Get started by adding your first role';
     document.getElementById('job-search-wrap').style.display='none';
-    document.getElementById('job-list').innerHTML=`<div style="text-align:center;padding:48px 24px;border:2px dashed var(--border);border-radius:12px;background:var(--surface)"><div style="font-size:36px;margin-bottom:14px">📋</div><div style="font-size:18px;font-weight:700;margin-bottom:6px">No roles yet</div><div style="font-size:14px;color:var(--text-2);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto">Type a GitGuardian role name — suggestions will appear as you type.</div><div style="display:flex;gap:8px;max-width:380px;margin:0 auto"><input class="add-job-input" type="text" id="empty-job-input" list="gg-jobs-list" placeholder="e.g. Security Engineer" style="flex:1" onkeydown="if(event.key==='Enter')addJobFromEmpty()" oninput="onEmptyJobInput(this.value)"><datalist id="gg-jobs-list"></datalist><button class="btn-add" onclick="addJobFromEmpty()">Add</button></div></div>`;
+    document.getElementById('job-list').innerHTML=`<div style="text-align:center;padding:48px 24px;border:2px dashed var(--border);border-radius:12px;background:var(--white)"><div style="font-size:36px;margin-bottom:14px">📋</div><div style="font-size:18px;font-weight:700;margin-bottom:6px">No roles yet</div><div style="font-size:14px;color:var(--text-2);margin-bottom:24px;max-width:320px;margin-left:auto;margin-right:auto">Type a GitGuardian role name — suggestions will appear as you type.</div><div style="display:flex;gap:8px;max-width:380px;margin:0 auto"><input class="add-job-input" type="text" id="empty-job-input" list="gg-jobs-list" placeholder="e.g. Security Engineer" style="flex:1" onkeydown="if(event.key==='Enter')addJobFromEmpty()" oninput="onEmptyJobInput(this.value)"><datalist id="gg-jobs-list"></datalist><button class="btn-add" onclick="addJobFromEmpty()">Add</button></div></div>`;
     loadEmptyLiveJobs();
     setTimeout(()=>{const inp=document.getElementById('empty-job-input');if(inp)inp.focus()},50);
     return;
@@ -658,7 +712,7 @@ function renderPicker(){
   document.getElementById('job-search-wrap').style.display='';
   renderJobCards();
 }
-async function addJobFromEmpty(){const inp=document.getElementById('empty-job-input');if(!inp)return;const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const{id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderPicker();renderJobsList();showToast('Role added — now click it to drop your CSV')}
+async function addJobFromEmpty(){const inp=document.getElementById('empty-job-input');if(!inp)return;const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})}).catch(()=>null);if(!res||!res.ok){showToast('Failed to add role — please retry');return}const{id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderPicker();renderJobsList();showToast('Role added — now click it to drop your CSV')}
 let _emptyLiveCache=[];
 async function loadEmptyLiveJobs(){
   let list=liveJobs.length?liveJobs:null;
@@ -687,9 +741,10 @@ async function openJob(jobId){
   await refreshImports();
 }
 async function refreshImports(){
-  const data=await apiFetch(`/api/jobs/${currentJobId}/imports`,[]);
-  importsCache[currentJobId]=Array.isArray(data)?data:[];
-  renderImports();
+  const jid=currentJobId;
+  const data=await apiFetch(`/api/jobs/${jid}/imports`,[]);
+  importsCache[jid]=Array.isArray(data)?data:[];
+  if(currentJobId===jid)renderImports();
 }
 function renderImports(){
   const imports=importsCache[currentJobId]||[];
@@ -703,23 +758,26 @@ function renderImports(){
   const cards=imports.map(imp=>{
     const dateStr=imp.import_date?new Date(imp.import_date).toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
     const k=imp.kept||0;const sk=imp.skipped||0;
-    return`<div class="import-card" onclick="openImport('${esc(imp.import_name||'')}')"><div class="import-card-info"><div class="import-card-name">${esc(imp.import_name||'Legacy import')}</div><div class="import-card-meta">${[dateStr,imp.total+' candidates'].filter(Boolean).join(' · ')}</div><div class="job-card-counts">${imp.hot?`<span class="count-badge count-hot">~${imp.hot} HOT</span>`:''}${imp.warm?`<span class="count-badge count-warm">~+${imp.warm} WARM</span>`:''}${k?`<span class="count-badge" style="background:var(--green-dim);color:var(--green)">${k} kept</span>`:''}${sk?`<span class="count-badge" style="background:var(--red-dim);color:var(--red)">${sk} skipped</span>`:''}</div></div><div class="import-card-actions"><button class="btn-del-import" data-imp="${esc(imp.import_name||'')}" onclick="event.stopPropagation();deleteImport(this.dataset.imp)" title="Delete import">🗑</button><div class="job-card-arrow">›</div></div></div>`;
+    return`<div class="import-card" data-imp="${esc(imp.import_name||'')}" onclick="openImport(this.dataset.imp)"><div class="import-card-info"><div class="import-card-name">${esc(imp.import_name||'Legacy import')}</div><div class="import-card-meta">${[dateStr,imp.total+' candidates'].filter(Boolean).join(' · ')}</div><div class="job-card-counts">${imp.hot?`<span class="count-badge count-hot">~${imp.hot} HOT</span>`:''}${imp.warm?`<span class="count-badge count-warm">~+${imp.warm} WARM</span>`:''}${k?`<span class="count-badge" style="background:var(--green-dim);color:var(--green)">${k} kept</span>`:''}${sk?`<span class="count-badge" style="background:var(--red-dim);color:var(--red)">${sk} skipped</span>`:''}</div></div><div class="import-card-actions"><button class="btn-del-import" data-imp="${esc(imp.import_name||'')}" onclick="event.stopPropagation();deleteImport(this.dataset.imp)" title="Delete import">🗑</button><div class="job-card-arrow">›</div></div></div>`;
   }).join('');
   document.getElementById('imports-list').innerHTML=viewAll+cards;
 }
 async function openImport(importName){
   currentImportName=importName;currentPage=1;showWarm=false;decFilter='all';
+  _selIdx=0;_keptOpened=new Set();_decideAt={};
   const job=allJobs.find(j=>j.id===currentJobId);
   document.getElementById('triage-job-title').textContent=(job?job.title:currentJobId)+(importName?' — '+importName:'');
   showScreen('triage');
   initUpload();
   if(!scoredByJob[currentJobId]){
+    const jid=currentJobId;
     document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--text-3)">Loading…</div>';
-    const data=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>{if(!r.ok)throw r.status;return r.json()}).catch(()=>null);
+    const data=await fetch(`/api/jobs/${jid}/candidates`).then(r=>{if(!r.ok)throw r.status;return r.json()}).catch(()=>null);
+    if(data)scoredByJob[jid]=Array.isArray(data)?data:[];
+    if(currentJobId!==jid)return; // user navigated away while loading
     if(!data){document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--red)">Failed to load — please try again</div>';return}
-    scoredByJob[currentJobId]=Array.isArray(data)?data:[];
-    const ht=settings.hotThreshold;const list=scoredByJob[currentJobId];
-    candidateCounts[currentJobId]={total:list.length,hot:list.filter(c=>adjustedScore(c)>=ht).length,warm:list.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};
+    const ht=settings.hotThreshold;const list=scoredByJob[jid];
+    candidateCounts[jid]={total:list.length,hot:list.filter(c=>adjustedScore(c)>=ht).length,warm:list.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};
   }
   renderList();
 }
@@ -739,6 +797,43 @@ async function deleteImport(importName){
 function getCandidatesForJob(){const all=(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c));if(currentImportName===null)return all;return all.filter(c=>c.importName===currentImportName)}
 function skippedCandidates(){return getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='excl')}
 
+function updateStats(){
+  const ht=settings.hotThreshold;
+  const all=getCandidatesForJob();
+  const hotCount=all.filter(c=>adjustedScore(c)>=ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const warmCount=all.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const keptCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='kept').length;
+  const sklCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='excl').length;
+  const viewCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='view').length;
+  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped${viewCount?' · '+viewCount+' viewed':''}`;
+}
+function _keptVisible(){return getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='kept'&&!isBlocked(c.company)&&!isTitleHidden(c.title))}
+function renderControls(){
+  const all=getCandidatesForJob();
+  const keptCount=_keptVisible().length;
+  const keptWithUrl=_keptVisible().filter(c=>c.url);
+  const remaining=keptWithUrl.filter(c=>!_keptOpened.has(c.url)).length;
+  const openLbl=(remaining&&remaining<keptWithUrl.length)?`Open next 5 (${remaining} left)`:`Open kept (${keptWithUrl.length})`;
+  const ctrlDec=(lbl,val)=>`<button class="ctrl-chip${decFilter===val?' active':''}" onclick="setDecFilter('${val}')">${lbl}</button>`;
+  const hasNoCands=(scoredByJob[currentJobId]||[]).length===0;
+  document.getElementById('triage-upload-zone').classList.toggle('hidden',!hasNoCands);
+  document.getElementById('triage-controls').innerHTML=hasNoCands?'':
+    `${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Viewed 👁','view')} ${ctrlDec('Undecided','undet')}
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-chip${showWarm?' active':''}" onclick="toggleWarm()">Show WARM</button>
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-chip" onclick="openAllKept()"${keptWithUrl.length?'':' disabled'}>${openLbl}</button>
+    <button class="ctrl-chip" onclick="downloadKeptCSV()"${keptCount?'':' disabled'}>Download CSV</button>
+    <div class="ctrl-sep"></div>
+    <button class="ctrl-chip" onclick="triggerUpload()">+ Add more</button>`;
+  renderKbdHint(hasNoCands);
+}
+function renderKbdHint(hide){
+  const el=document.getElementById('kbd-hint');
+  let dismissed=false;try{dismissed=!!localStorage.getItem('kbd_hint_dismissed')}catch{}
+  el.innerHTML=(hide||dismissed)?'':`<span>⌨</span><span><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>→</kbd> keep · <kbd>←</kbd> skip · <kbd>v</kbd> viewed · <kbd>l</kbd> LinkedIn · <kbd>b</kbd> block co. · <kbd>u</kbd> undo</span><button onclick="dismissKbdHint()" title="Dismiss">×</button>`;
+}
+function dismissKbdHint(){try{localStorage.setItem('kbd_hint_dismissed','1')}catch{}document.getElementById('kbd-hint').innerHTML=''}
 function renderList(){
   const ht=settings.hotThreshold;
   const all=getCandidatesForJob();
@@ -761,31 +856,19 @@ function renderList(){
   const totalPages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE));
   if(currentPage>totalPages)currentPage=totalPages;
   const pageSlice=visible.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);
-  const hotCount=all.filter(c=>adjustedScore(c)>=ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  _totalPages=totalPages;_pageCands=pageSlice;_pageKeys=pageSlice.map(c=>dkey(currentJobId,c));
+  if(_selIdx>=pageSlice.length)_selIdx=Math.max(0,pageSlice.length-1);
   const warmCount=all.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
-  const keptCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='kept').length;
-  const sklCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='excl').length;
-  const viewCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='view').length;
-  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped${viewCount?' · '+viewCount+' viewed':''}`;
-  const keptWithUrl=all.filter(c=>decisions[dkey(currentJobId,c)]==='kept'&&c.url);
-  const ctrlDec=(lbl,val)=>`<button class="ctrl-chip${decFilter===val?' active':''}" onclick="setDecFilter('${val}')">${lbl}</button>`;
-  const hasNoCands=(scoredByJob[currentJobId]||[]).length===0;
-  document.getElementById('triage-upload-zone').classList.toggle('hidden',!hasNoCands);
-  document.getElementById('triage-controls').innerHTML=hasNoCands?'':
-    `${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Viewed 👁','view')} ${ctrlDec('Undecided','undet')}
-    <div class="ctrl-sep"></div>
-    <button class="ctrl-chip${showWarm?' active':''}" onclick="toggleWarm()">Show WARM</button>
-    <div class="ctrl-sep"></div>
-    <button class="ctrl-chip" onclick="openAllKept()"${keptWithUrl.length?'':' disabled'}>Open kept (${keptWithUrl.length})</button>
-    <button class="ctrl-chip" onclick="downloadKeptCSV()"${keptCount?'':' disabled'}>Download CSV</button>
-    <div class="ctrl-sep"></div>
-    <button class="ctrl-chip" onclick="triggerUpload()">+ Add more</button>`;
-  document.getElementById('blocked-chips').innerHTML=blockedTerms.length
-    ?`<div class="blocked-chips">${blockedTerms.map(t=>`<span class="chip">${esc(t)}<span class="chip-x" onclick="unblock('${esc(t)}')">×</span></span>`).join('')}</div>`:'';
+  updateStats();
+  renderControls();
+  const chipOwn=t=>`<span class="chip">${esc(t)}<span class="chip-share" data-t="${esc(t)}" onclick="shareBlock(this.dataset.t)" title="Share with team">👥</span><span class="chip-x" data-t="${esc(t)}" onclick="unblock(this.dataset.t)">×</span></span>`;
+  const chipShared=t=>`<span class="chip chip-team" title="Team-wide block">👥 ${esc(t)}<span class="chip-x" data-t="${esc(t)}" onclick="unshareBlock(this.dataset.t)">×</span></span>`;
+  document.getElementById('blocked-chips').innerHTML=(blockedTerms.length||sharedBlockedTerms.length)
+    ?`<div class="blocked-chips">${blockedTerms.map(chipOwn).join('')}${sharedBlockedTerms.map(chipShared).join('')}</div>`:'';
   const allRaw=scoredByJob[currentJobId]||[];
   const hiddenDecided=allRaw.filter(c=>{const d=decisions[dkey(currentJobId,c)];return d&&d!=='undet'&&!passesFilters(c)}).length;
   document.getElementById('filter-warn').innerHTML=hiddenDecided?`<div style="font-size:12px;color:var(--amber,#b45309);background:var(--amber-dim,#fef3c7);border:1px solid var(--amber-border,#fde68a);border-radius:8px;padding:8px 12px;margin-bottom:8px">⚠ ${hiddenDecided} decided candidate${hiddenDecided>1?'s are':' is'} hidden by your title filters</div>`:'';
-  document.getElementById('cand-list').innerHTML=pageSlice.map(c=>{
+  document.getElementById('cand-list').innerHTML=pageSlice.map((c,i)=>{
     const k=dkey(currentJobId,c);const dec=decisions[k]||'undet';const adj=adjustedScore(c);
     const tier=adj>=ht?'hot':'warm';
     const kA=dec==='kept'?' active':'';const xA=dec==='excl'?' active':'';const vA=dec==='view'?' active':'';
@@ -793,38 +876,153 @@ function renderList(){
     const rep=companyReputation(c.company);
     const pref=companyPreferenceBonus(c.company);
     const adjNote=(rep!==0||pref!==0)?` <span style="font-size:11px;color:var(--text-3)">(${rep!==0?(rep>0?'+':'')+rep:''}${pref>0?(rep!==0?' ':'')+'⭐+'+pref:''})</span>`:'';
-    return`<div class="cand-card${dec!=='undet'?' decided':''}">
+    const blkBtn=c.company?` <button class="btn-block-co" data-co="${esc(c.company)}" onclick="blockCompany(this.dataset.co)" title="Block this company">🚫</button>`:'';
+    return`<div class="cand-card${dec!=='undet'?' decided':''}${i===_selIdx?' selected':''}" data-k="${esc(k)}">
       <div class="cand-header">
         <div class="cand-score score-${tier}">${adj}${adjNote}</div>
         <div class="cand-meta">
           <div class="cand-name">${esc(c.name)}</div>
           <div class="cand-title">${esc(c.title)}</div>
-          <div class="cand-company">${pref>0?'⭐ ':''}${esc(c.company)}</div>
+          <div class="cand-company">${pref>0?'⭐ ':''}${esc(c.company)}${blkBtn}</div>
         </div>
         <div class="cand-actions">${liBtn}<button class="btn-view${vA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'view')">👁 Viewed</button><button class="btn-keep${kA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'kept')">✓ Keep</button><button class="btn-skip${xA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'excl')">✕ Skip</button></div>
       </div>
       <div class="cand-reasons">${c.reasons.map(r=>`<span class="reason-tag">${esc(r)}</span>`).join('')}</div>
     </div>`;
-  }).join('')||`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No candidates match the current filters.</div>`;
+  }).join('')||((!showWarm&&warmCount>0&&(decFilter==='all'||decFilter==='undet'))
+    ?`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No HOT candidates match — ${warmCount} WARM hidden. <button class="ctrl-chip" onclick="toggleWarm()" style="margin-left:8px">Show WARM</button></div>`
+    :`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No candidates match the current filters.</div>`);
   document.getElementById('pager').innerHTML=totalPages>1
     ?`<div class="pager"><button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Prev</button><span class="page-info">Page ${currentPage} of ${totalPages} · ${visible.length} total</span><button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>Next →</button></div>`:'';
   updateRefineFab();
 }
-function goPage(n){currentPage=n;renderList();window.scrollTo(0,0)}
-function setDecFilter(f){decFilter=f;currentPage=1;renderList()}
-function toggleWarm(){showWarm=!showWarm;currentPage=1;renderList()}
-function decide(k,action){const prev=decisions[k];const next=prev===action?undefined:action;if(next)decisions[k]=next;else delete decisions[k];renderList();saveDec(k,decisions[k]||null,()=>{if(prev!==undefined)decisions[k]=prev;else delete decisions[k];renderList()})}
+function goPage(n){currentPage=n;_selIdx=0;renderList();window.scrollTo(0,0)}
+function setDecFilter(f){decFilter=f;currentPage=1;_selIdx=0;renderList()}
+function toggleWarm(){showWarm=!showWarm;currentPage=1;_selIdx=0;renderList()}
+// Decisions update the card in place — the list is NOT re-sorted mid-triage, so
+// cards never move under the cursor. Full re-sort happens on page/filter changes.
+function updateDecisionUI(k){
+  const card=document.querySelector(`.cand-card[data-k="${CSS.escape(k)}"]`);
+  const dec=decisions[k]||'undet';
+  if(card){
+    card.classList.toggle('decided',dec!=='undet');
+    card.querySelector('.btn-keep')?.classList.toggle('active',dec==='kept');
+    card.querySelector('.btn-skip')?.classList.toggle('active',dec==='excl');
+    card.querySelector('.btn-view')?.classList.toggle('active',dec==='view');
+  }
+  updateStats();renderControls();updateRefineFab();
+}
+function _setDecision(k,val,save){
+  if(val!==undefined)decisions[k]=val;else delete decisions[k];
+  updateDecisionUI(k);
+  if(save)saveDec(k,val||null);
+}
+function decide(k,action){
+  const now=Date.now();
+  // Debounce only a repeat of the SAME action (accidental double-click); a different
+  // action is an intentional correction and must go through.
+  if(_decideAt[k]&&_decideAt[k].action===action&&now-_decideAt[k].t<350)return;
+  _decideAt[k]={action,t:now};
+  const prev=decisions[k];
+  const next=prev===action?undefined:action;
+  if(next)decisions[k]=next;else delete decisions[k];
+  _lastUndo=()=>_setDecision(k,prev,true);
+  updateDecisionUI(k);
+  if(next==='kept'||next==='excl'){
+    const nm=k.slice(k.indexOf('::')+2,k.lastIndexOf('|'))||'candidate';
+    showUndoToast(`${next==='kept'?'Kept':'Skipped'} ${nm}`,()=>_setDecision(k,prev,true));
+  }
+  saveDec(k,decisions[k]||null,()=>_setDecision(k,prev,false));
+}
+function undoLast(){
+  if(!_lastUndo)return;
+  const fn=_lastUndo;_lastUndo=null;
+  fn();
+  showToast('Undone');
+}
 function unblock(term){blockedTerms=blockedTerms.filter(t=>t!==term);saveBlk();renderList()}
+function blockCompany(co){
+  if(!co)return;
+  if(isBlocked(co)){showToast(co+' is already blocked');return}
+  const keepIdx=_selIdx; // preserve cursor position across the re-render
+  blockedTerms.push(co);saveBlk();renderList();
+  _selectIdx(keepIdx);
+  const undo=()=>{unblock(co)};
+  _lastUndo=undo; // so the 'u' key undoes the most recent action (this block)
+  showUndoToast('Blocked '+co,undo);
+}
+async function shareBlock(term){
+  const res=await fetch('/api/blocks/shared',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({term})}).catch(()=>null);
+  if(!res||!res.ok){showToast('Failed to share block');return}
+  if(!sharedBlockedTerms.includes(term))sharedBlockedTerms.push(term);
+  blockedTerms=blockedTerms.filter(t=>t!==term);saveBlk();
+  renderList();showToast('Team block: '+term);
+}
+async function unshareBlock(term){
+  if(!confirm(`Remove team-wide block "${term}" for everyone?`))return;
+  const res=await fetch('/api/blocks/shared/'+encodeURIComponent(term),{method:'DELETE'}).catch(()=>null);
+  if(!res||!res.ok){showToast('Failed to remove team block');return}
+  sharedBlockedTerms=sharedBlockedTerms.filter(t=>t!==term);
+  renderList();showToast('Team block removed');
+}
+
+// ── keyboard triage ──
+function _selectIdx(i){
+  const cards=document.querySelectorAll('#cand-list .cand-card');
+  if(!cards.length)return;
+  _selIdx=Math.max(0,Math.min(i,cards.length-1));
+  cards.forEach((el,j)=>el.classList.toggle('selected',j===_selIdx));
+  cards[_selIdx].scrollIntoView({block:'center'});
+}
+function _moveSel(d){
+  const n=_pageKeys.length;
+  if(!n)return;
+  const ni=_selIdx+d;
+  if(ni<0){if(currentPage>1){goPage(currentPage-1);_selectIdx(_pageKeys.length-1)}return}
+  if(ni>=n){if(currentPage<_totalPages){goPage(currentPage+1);_selectIdx(0)}return}
+  _selectIdx(ni);
+}
+function _kbDecide(action){
+  const k=_pageKeys[_selIdx];
+  if(!k)return;
+  decide(k,action);
+  if(decisions[k]===action){ // applied (not toggled off) → advance to next undecided
+    for(let i=_selIdx+1;i<_pageKeys.length;i++){if(!decisions[_pageKeys[i]]){_selectIdx(i);return}}
+    if(currentPage<_totalPages){goPage(currentPage+1);_selectIdx(0)}
+  }
+}
+document.addEventListener('keydown',e=>{
+  const tag=(e.target&&e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select'||e.metaKey||e.ctrlKey||e.altKey)return;
+  const overlayOpen=document.querySelector('.overlay:not(.hidden)');
+  if(e.key==='Escape'){if(overlayOpen){hideLists();hideRefine();e.preventDefault()}return}
+  if(overlayOpen)return;
+  if(!document.getElementById('screen-triage').classList.contains('active'))return;
+  if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();_moveSel(1)}
+  else if(e.key==='k'||e.key==='ArrowUp'){e.preventDefault();_moveSel(-1)}
+  else if(e.key==='ArrowRight'){e.preventDefault();_kbDecide('kept')}
+  else if(e.key==='ArrowLeft'){e.preventDefault();_kbDecide('excl')}
+  else if(e.key==='v'){_kbDecide('view')}
+  else if(e.key==='l'){const c=_pageCands[_selIdx];if(c&&c.url)openLI(c.url)}
+  else if(e.key==='b'){const c=_pageCands[_selIdx];if(c&&c.company)blockCompany(c.company)}
+  else if(e.key==='u'){undoLast()}
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // LINKEDIN / EXPORT
 // ═══════════════════════════════════════════════════════════════════
 function openLI(url){if(url)window.open(url,'_blank','noopener,noreferrer')}
 function openAllKept(){
-  const urls=getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='kept'&&c.url).map(c=>c.url);
+  // Open in batches of 5: popup blockers silently drop tabs beyond the first
+  // few per user gesture, so a single loop loses most profiles.
+  const urls=_keptVisible().filter(c=>c.url).map(c=>c.url);
   if(!urls.length){showToast('No kept candidates with LinkedIn URLs');return}
-  if(urls.length>10&&!confirm(`Open ${urls.length} tabs?`))return;
-  urls.forEach(u=>window.open(u,'_blank','noopener,noreferrer'));
+  const remaining=urls.filter(u=>!_keptOpened.has(u));
+  if(!remaining.length){_keptOpened=new Set();showToast('All kept profiles opened — click again to restart');renderControls();return}
+  remaining.slice(0,5).forEach(u=>{_keptOpened.add(u);window.open(u,'_blank','noopener,noreferrer')});
+  renderControls();
+  const left=remaining.length-Math.min(5,remaining.length);
+  if(left)showToast(`Opened 5 — ${left} left, click again`);
 }
 function downloadKeptCSV(){
   fetch(`/api/jobs/${currentJobId}/export.csv`)
@@ -840,7 +1038,7 @@ function updateRefineFab(){const skips=skippedCandidates().length;document.getEl
 function analyzeSkipPatterns(){
   const skipped=skippedCandidates(),questions=[];
   const coCount={};
-  skipped.forEach(c=>{if(!c.company)return;const dom=c.company.toLowerCase();const blockedByTerm=blockedTerms.some(t=>dom.includes(t.toLowerCase()));const hiddenByPat=hiddenPatterns.some(p=>new RegExp(p.regex,'i').test(c.company)||new RegExp(p.regex,'i').test(c.title));if(!blockedByTerm&&!hiddenByPat)coCount[c.company]=(coCount[c.company]||0)+1});
+  skipped.forEach(c=>{if(!c.company)return;const hiddenByPat=hiddenPatterns.some(p=>{try{return new RegExp(p.regex,'i').test(c.company)||new RegExp(p.regex,'i').test(c.title)}catch{return false}});if(!isBlocked(c.company)&&!hiddenByPat)coCount[c.company]=(coCount[c.company]||0)+1});
   Object.entries(coCount).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).slice(0,4).forEach(([co,n])=>{questions.push({id:'co_'+co,html:`You skipped <strong>${n} people from <span class="pattern-tag">${esc(co)}</span></strong> — block this company entirely?`,yes:()=>{blockedTerms.push(co);saveBlk();renderList()}})});
   const cfoSkips=skipped.filter(c=>isCfoTitle(c.title));
   if(cfoSkips.length>=1){const sample=[...new Set(cfoSkips.map(c=>c.title))].slice(0,3);questions.push({id:'pat_cfo',html:`<strong>${cfoSkips.length} skipped</strong> have CFO / Finance Director titles ${sample.map(t=>`<span class="pattern-tag">${esc(t)}</span>`).join(' ')} — auto-filtered. Mark as seen?`,yesLabel:'Got it',noLabel:'Close',yes:()=>{}})}
@@ -850,12 +1048,12 @@ function analyzeSkipPatterns(){
   const intHidden=hiddenPatterns.some(p=>p.regex.includes('interim'));
   if(intSkips.length>=1&&!intHidden)questions.push({id:'pat_interim',html:`<strong>${intSkips.length} skipped</strong> are interim / managers de transition — filter them?`,yes:()=>{hiddenPatterns.push({label:'Interim / freelance',regex:'\\b(interim|interimaire|freelance|consultant indépendant)\\b'});saveHPat();renderList()}});
   const xjobCount={};
-  for(const[jid,list]of Object.entries(scoredByJob)){for(const c of list){if(!c.company)continue;const d=decisions[dkey(jid,c)];if(d!=='excl')continue;const alreadyBlocked=blockedTerms.some(t=>c.company.toLowerCase().includes(t.toLowerCase()));if(!alreadyBlocked)xjobCount[c.company]=(xjobCount[c.company]||0)+1}}
+  for(const[jid,list]of Object.entries(scoredByJob)){for(const c of list){if(!c.company)continue;const d=decisions[dkey(jid,c)];if(d!=='excl')continue;if(!isBlocked(c.company))xjobCount[c.company]=(xjobCount[c.company]||0)+1}}
   Object.entries(xjobCount).filter(([,n])=>n>=3).sort((a,b)=>b[1]-a[1]).slice(0,5).forEach(([co,n])=>{if(!questions.find(q=>q.id==='xjob_'+co))questions.push({id:'xjob_'+co,html:`<strong>Cross-job: ${n}× <span class="pattern-tag">${esc(co)}</span></strong> skipped across all jobs — block globally?`,yes:()=>{blockedTerms.push(co);saveBlk();renderList()}})});
   return questions;
 }
 let __refineActions={};
-function showRefine(){const questions=analyzeSkipPatterns();document.getElementById('refine-sub').textContent=`${skippedCandidates().length} skipped · ${questions.length} pattern${questions.length===1?'':'s'} detected`;document.getElementById('refine-questions').innerHTML=questions.length?questions.map(q=>{const resolved=refineState[q.id]==='resolved';return`<div class="refine-q${resolved?' resolved':''}" id="rq_${q.id.replace(/[^a-z0-9]/gi,'_')}"><div class="refine-q-lbl">${q.html}</div>${!resolved?`<div class="refine-choices"><button class="refine-yes" onclick="applyRefine('${esc(q.id)}')">${q.yesLabel||'Yes, apply'}</button><button class="refine-no" onclick="dismissRefine('${esc(q.id)}')">${q.noLabel||'No, skip'}</button></div>`:''}</div>`}).join(''):`<div class="lists-empty">No clear patterns yet.</div>`;__refineActions={};questions.forEach(q=>{__refineActions[q.id]=q.yes});document.getElementById('overlay-refine').classList.remove('hidden')}
+function showRefine(){const questions=analyzeSkipPatterns();document.getElementById('refine-sub').textContent=`${skippedCandidates().length} skipped · ${questions.length} pattern${questions.length===1?'':'s'} detected`;document.getElementById('refine-questions').innerHTML=questions.length?questions.map(q=>{const resolved=refineState[q.id]==='resolved';return`<div class="refine-q${resolved?' resolved':''}" id="rq_${q.id.replace(/[^a-z0-9]/gi,'_')}"><div class="refine-q-lbl">${q.html}</div>${!resolved?`<div class="refine-choices"><button class="refine-yes" data-id="${esc(q.id)}" onclick="applyRefine(this.dataset.id)">${q.yesLabel||'Yes, apply'}</button><button class="refine-no" data-id="${esc(q.id)}" onclick="dismissRefine(this.dataset.id)">${q.noLabel||'No, skip'}</button></div>`:''}</div>`}).join(''):`<div class="lists-empty">No clear patterns yet.</div>`;__refineActions={};questions.forEach(q=>{__refineActions[q.id]=q.yes});document.getElementById('overlay-refine').classList.remove('hidden')}
 function applyRefine(id){if(__refineActions[id])__refineActions[id]();refineState[id]='resolved';saveRqs();const el=document.getElementById('rq_'+id.replace(/[^a-z0-9]/gi,'_'));if(el){el.classList.add('resolved');el.querySelector('.refine-choices')?.remove()}showToast('Applied')}
 function dismissRefine(id){refineState[id]='resolved';saveRqs();const el=document.getElementById('rq_'+id.replace(/[^a-z0-9]/gi,'_'));if(el){el.classList.add('resolved');el.querySelector('.refine-choices')?.remove()}}
 function hideRefine(){document.getElementById('overlay-refine').classList.add('hidden')}
@@ -872,10 +1070,11 @@ function showLists(){
   const avoidStr=sortedAvoid.map(([co])=>co).join(', ');
   const srcHtml=sortedSrc.length?sortedSrc.map(([co,n])=>`<div class="company-row"><span class="company-name">${esc(co)}</span><span class="company-count">${n}</span></div>`).join(''):`<div class="lists-empty">No kept companies yet</div>`;
   const avoidHtml=sortedAvoid.length?sortedAvoid.map(([co,n])=>{const blk=isBlocked(co);return`<div class="company-row"><span class="company-name">${esc(co)}</span><span class="company-count">${n}</span>${!blk?`<button class="btn-block-global" data-co="${esc(co)}" onclick="blockGlobal(this.dataset.co)">🚫 Block</button>`:''}</div>`}).join(''):`<div class="lists-empty">No avoided companies yet</div>`;
-  document.getElementById('lists-content').innerHTML=`<div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Source from<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(srcStr)}').then(()=>showToast('Copied'))">Copy</button></div>${srcHtml}</div><div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Avoid<button class="btn-copy" onclick="navigator.clipboard.writeText('${esc(avoidStr)}').then(()=>showToast('Copied'))">Copy</button></div>${avoidHtml}</div>`;
+  document.getElementById('lists-content').innerHTML=`<div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Source from<button class="btn-copy" data-s="${esc(srcStr)}" onclick="copyText(this.dataset.s)">Copy</button></div>${srcHtml}</div><div class="lists-section"><div class="lists-section-title" style="display:flex;justify-content:space-between">Avoid<button class="btn-copy" data-s="${esc(avoidStr)}" onclick="copyText(this.dataset.s)">Copy</button></div>${avoidHtml}</div>`;
   document.getElementById('overlay-lists').classList.remove('hidden');
 }
-function blockGlobal(term){blockedTerms.push(term);saveBlk();renderList();showLists();showToast('Blocked: '+term)}
+function copyText(s){navigator.clipboard.writeText(s).then(()=>showToast('Copied'))}
+function blockGlobal(term){blockedTerms.push(term);saveBlk();renderList();showLists();showUndoToast('Blocked '+term,()=>{unblock(term);showLists()})}
 function hideLists(){document.getElementById('overlay-lists').classList.add('hidden')}
 
 // ═══════════════════════════════════════════════════════════════════
@@ -883,9 +1082,23 @@ function hideLists(){document.getElementById('overlay-lists').classList.add('hid
 // ═══════════════════════════════════════════════════════════════════
 function renderSettings(){document.getElementById('thresh-slider').value=settings.hotThreshold;document.getElementById('thresh-val').textContent=settings.hotThreshold;document.getElementById('tog-cfo').checked=settings.filterCFO;document.getElementById('tog-interim').checked=settings.filterInterim;document.getElementById('tog-ec').checked=settings.filterExpertComptable;renderJobsList();renderPrefList()}
 function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.map(j=>`<div class="job-item"><span class="job-item-title">${esc(j.title)}</span><button class="btn-del" onclick="removeJob('${esc(j.id)}')" title="Remove">×</button></div>`).join('')}
-function updateThreshold(v){settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings()}
+let _thTimer;
+function updateThreshold(v){
+  settings.hotThreshold=parseInt(v);document.getElementById('thresh-val').textContent=v;saveSettings();
+  clearTimeout(_thTimer);
+  _thTimer=setTimeout(async()=>{
+    const c=await fetch('/api/candidates/counts').then(r=>r.json()).catch(()=>null);
+    // Server counts are raw-score based: only take them for jobs not loaded this
+    // session; recompute loaded jobs locally with adjusted scores.
+    if(c)for(const[jid,cnt]of Object.entries(c)){if(!scoredByJob[jid])candidateCounts[jid]=cnt}
+    const ht=settings.hotThreshold;
+    for(const[jid,list]of Object.entries(scoredByJob)){
+      candidateCounts[jid]={total:list.length,hot:list.filter(x=>adjustedScore(x)>=ht).length,warm:list.filter(x=>adjustedScore(x)>=POSSIBLE&&adjustedScore(x)<ht).length};
+    }
+  },400);
+}
 function updateFilter(key,val){settings[key]=val;saveSettings()}
-async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});const {id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderJobsList();showToast('Role added')}
+async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})}).catch(()=>null);if(!res||!res.ok){showToast('Failed to add role — please retry');return}const {id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderJobsList();showToast('Role added')}
 async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);customJobs=jobs;rebuildAllJobs();delete scoredByJob[id];delete candidateCounts[id];delete importsCache[id];if(currentJobId===id){currentJobId=null;_prevScreen='picker'}await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
 async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};await fetch('/api/decisions',{method:'DELETE'});renderList();renderPicker();showToast('Decisions cleared')}
 async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
@@ -930,6 +1143,6 @@ async function removePrefCompany(name){
 // INIT
 // ═══════════════════════════════════════════════════════════════════
 document.getElementById('imports-file-input').addEventListener('change',e=>{handleFile(e.target.files[0]);e.target.value=''});
-loadState().then(()=>renderPicker()).catch(()=>showToast('Failed to load — please refresh'));
+loadState().then(()=>{renderPicker();if(location.hash.length>1)applyHash()}).catch(()=>showToast('Failed to load — please refresh'));
 </script>
 </html>

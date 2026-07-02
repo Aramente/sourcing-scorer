@@ -4,15 +4,28 @@ const LIVE_CACHE_MS = 5 * 60_000;
 const SESSION_MS = 7 * 86400_000;
 
 // ── password ──────────────────────────────────────────────────────
-async function hashPassword(plain, salt) {
+const KDF_ITERS = 600_000;        // current target; per-user kdf_iters supports old 10k hashes until rehash
+const LOCK_AFTER = 10;            // failed attempts before lockout
+const LOCK_MS = 15 * 60_000;
+async function hashPassword(plain, salt, iters = KDF_ITERS) {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(plain), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
-    {name:'PBKDF2', salt:enc.encode(salt), iterations:10_000, hash:'SHA-256'},
+    {name:'PBKDF2', salt:enc.encode(salt), iterations:iters, hash:'SHA-256'},
     key, 256
   );
   return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+
+// ── title filters (mirror of the client's auto-exclusion rules, for export) ──
+const _CFO_TITLE_RE=/\b(cfo|chief financial officer|chief finance officer)\b|\b(directeur|directrice)\s+financi[eè]re?\b|\b(vp finance|vp of finance|head of finance|finance director|director of finance)\b/i;
+const _ACCOUNTING_CTX_RE=/\b(accounting|comptabilit[eé]|consolidation|tax|fiscal)\b/i;
+const _INTERIM_RE=/\b(interim|int[eé]rimaire|manager de transition|management de transition)\b/i;
+const _EXPERT_CPT_RE=/\bexpert[-\s]comptable\b/i;
+const _INHOUSE_RE=/\b(interne|intern[ao]|responsable|directeur|groupe)\b/i;
+const isCfoTitle = t => _CFO_TITLE_RE.test(t) && !_ACCOUNTING_CTX_RE.test(t);
+const isInterim = t => _INTERIM_RE.test(t);
+const isExpertComptable = t => _EXPERT_CPT_RE.test(t) && !_INHOUSE_RE.test(t);
 
 // ── session ───────────────────────────────────────────────────────
 function getToken(request) {
@@ -49,8 +62,8 @@ async function seedUsersIfEmpty(env) {
   for (const u of defs) {
     const salt = crypto.randomUUID();
     const hash = await hashPassword(u.pass, salt);
-    await env.DB.prepare('INSERT OR IGNORE INTO users (id,name,password_hash,password_salt) VALUES(?,?,?,?)')
-      .bind(u.id, u.name, hash, salt).run();
+    await env.DB.prepare('INSERT OR IGNORE INTO users (id,name,password_hash,password_salt,kdf_iters) VALUES(?,?,?,?,?)')
+      .bind(u.id, u.name, hash, salt, KDF_ITERS).run();
   }
 }
 
@@ -59,12 +72,34 @@ async function handleLogin(request, env) {
   await seedUsersIfEmpty(env);
   let body;
   try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
-  const user = await env.DB.prepare('SELECT id,name,password_hash,password_salt FROM users WHERE id=?')
+  const user = await env.DB.prepare('SELECT id,name,password_hash,password_salt,kdf_iters,failed_count,locked_until FROM users WHERE id=?')
     .bind((body.username||'').toLowerCase().trim()).first();
-  if (!user) return err(401,'Invalid credentials');
-  const ok = (await hashPassword(body.password||'', user.password_salt)) === user.password_hash;
-  if (!ok) return err(401,'Invalid credentials');
+  if (!user) {
+    // Burn the same KDF cost as a real check so timing doesn't reveal valid usernames
+    await hashPassword(body.password||'', 'dummy-salt-for-constant-timing');
+    return err(401,'Invalid credentials');
+  }
+  const now = Date.now();
+  if ((user.locked_until||0) > now) return err(429,'Too many failed attempts — try again in a few minutes');
+  const iters = user.kdf_iters || 10_000;
+  const ok = (await hashPassword(body.password||'', user.password_salt, iters)) === user.password_hash;
+  if (!ok) {
+    const fails = (user.failed_count||0) + 1;
+    if (fails >= LOCK_AFTER) await env.DB.prepare('UPDATE users SET failed_count=0, locked_until=? WHERE id=?').bind(now+LOCK_MS, user.id).run();
+    else await env.DB.prepare('UPDATE users SET failed_count=? WHERE id=?').bind(fails, user.id).run();
+    return err(401,'Invalid credentials');
+  }
+  if (user.failed_count || user.locked_until) {
+    await env.DB.prepare('UPDATE users SET failed_count=0, locked_until=0 WHERE id=?').bind(user.id).run();
+  }
+  if (iters < KDF_ITERS) {
+    // Transparent upgrade of legacy 10k-iteration hashes
+    const salt = crypto.randomUUID();
+    const hash = await hashPassword(body.password||'', salt, KDF_ITERS);
+    await env.DB.prepare('UPDATE users SET password_hash=?, password_salt=?, kdf_iters=? WHERE id=?').bind(hash, salt, KDF_ITERS, user.id).run();
+  }
   const token = crypto.randomUUID();
+  await env.DB.prepare('DELETE FROM sessions WHERE created_at<?').bind(Date.now()-SESSION_MS).run();
   await env.DB.prepare('INSERT INTO sessions (token,user_id,created_at) VALUES(?,?,?)').bind(token,user.id,Date.now()).run();
   return new Response(JSON.stringify({ok:true,user:{id:user.id,name:user.name}}), {
     headers:{'Content-Type':'application/json','Set-Cookie':setCookie(token,false)},
@@ -164,7 +199,13 @@ async function handleAPI(request, url, session, env) {
   }
   const jobDel = path.match(/^\/api\/jobs\/([^/]+)$/);
   if (jobDel && method==='DELETE') {
-    await env.DB.prepare('DELETE FROM jobs WHERE user_id=? AND id=?').bind(uid,jobDel[1]).run();
+    const jid = jobDel[1];
+    const likePat = jid.replace(/[\\%_]/g, m=>'\\'+m)+'::%';
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM jobs WHERE user_id=? AND id=?').bind(uid,jid),
+      env.DB.prepare('DELETE FROM candidates WHERE user_id=? AND job_id=?').bind(uid,jid),
+      env.DB.prepare("DELETE FROM decisions WHERE user_id=? AND candidate_key LIKE ? ESCAPE '\\'").bind(uid,likePat),
+    ]);
     return ok({ok:true});
   }
 
@@ -183,7 +224,7 @@ async function handleAPI(request, url, session, env) {
           SUM(CASE WHEN d.action = 'excl' THEN 1 ELSE 0 END) as skipped,
           SUM(CASE WHEN d.action = 'view' THEN 1 ELSE 0 END) as viewed
         FROM candidates c
-        LEFT JOIN decisions d ON d.user_id = c.user_id AND d.candidate_key = c.job_id || '::' || c.name || '|' || c.company
+        LEFT JOIN decisions d ON d.user_id = c.user_id AND d.candidate_key = c.job_id || '::' || (CASE WHEN c.name='' THEN c.linkedin_url ELSE c.name END) || '|' || c.company
         WHERE c.user_id = ? AND c.job_id = ?
         GROUP BY c.import_name ORDER BY MIN(c.import_date) ASC`
       ).bind(ht, ht, uid, jobId).all();
@@ -211,7 +252,8 @@ async function handleAPI(request, url, session, env) {
       if (!Array.isArray(list)) return err(400, 'candidates must be array');
       if (!list.length) return ok({ ok: true, count: 0, skipped: 0 });
       const stmts = list.map(c => {
-        const dedup = `${c.name}|${c.company}`;
+        // Mirrors the frontend's ckey(): nameless (anonymized) leads fall back to their URL
+        const dedup = `${c.name||c.linkedin_url||c.url||''}|${c.company||''}`;
         return env.DB.prepare(
           'INSERT OR IGNORE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name,import_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)'
         ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[]), importName, importDate);
@@ -255,14 +297,29 @@ async function handleAPI(request, url, session, env) {
     const cands = await env.DB.prepare(
       'SELECT name,company,title,linkedin_url,score,reasons FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
     ).bind(uid, jobId).all();
-    const kept = cands.results.filter(c => keptSet.has(`${jobId}::${c.name}|${c.company}`) || keptSet.has(`${c.name}|${c.company}`));
+    // Apply the same blocks/patterns/filters the triage UI applies, so the export
+    // can't contain candidates the recruiter believes were removed. Legacy
+    // pre-migration 'name|company' keys are no longer honored (they matched every job).
+    const blkRows = await env.DB.prepare("SELECT term FROM blocks WHERE user_id=? OR user_id=''").bind(uid).all();
+    const blockTerms = blkRows.results.map(r => r.term.toLowerCase());
+    const patRows = await env.DB.prepare('SELECT pattern_regex FROM hidden_patterns WHERE user_id=?').bind(uid).all();
+    const patterns = patRows.results.map(r => { try { return new RegExp(r.pattern_regex,'i') } catch { return null } }).filter(Boolean);
+    const st = await env.DB.prepare('SELECT filter_cfo,filter_interim,filter_expert_comptable FROM user_settings WHERE user_id=?').bind(uid).first();
+    const f = st ? {cfo:!!st.filter_cfo, interim:!!st.filter_interim, ec:!!st.filter_expert_comptable} : {cfo:true, interim:true, ec:true};
+    const hiddenTitle = t => (f.cfo&&isCfoTitle(t))||(f.interim&&isInterim(t))||(f.ec&&isExpertComptable(t))||patterns.some(re=>re.test(t));
+    const blocked = co => { const n=(co||'').toLowerCase(); return blockTerms.some(t=>n.includes(t)) };
+    const kept = cands.results.filter(c =>
+      keptSet.has(`${jobId}::${c.name||c.linkedin_url||''}|${c.company}`) && !blocked(c.company) && !hiddenTitle(c.title)
+    );
     const rows = [['Name','Title','Company','Score','LinkedIn','Reasons']];
     kept.forEach(c => rows.push([
       c.name, c.title, c.company, String(c.score), c.linkedin_url,
       JSON.parse(c.reasons||'[]').join(' | ')
     ]));
+    // Neutralize spreadsheet formula injection (=, +, -, @) from untrusted profile data
+    const cell = v => { const s = String(v); return /^[=+\-@\t\r]/.test(s) ? "'"+s : s; };
     const csv = '﻿' + rows.map(r =>
-      r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')
+      r.map(v => `"${cell(v).replace(/"/g,'""')}"`).join(',')
     ).join('\n');
     const slug = jobId.replace(/[^a-z0-9]/gi,'-').toLowerCase().slice(0,40);
     return new Response(csv, {
@@ -273,19 +330,42 @@ async function handleAPI(request, url, session, env) {
     });
   }
 
+  // shared (team-wide) block terms live under user_id=''
+  if (path==='/api/blocks/shared' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const term = (typeof body.term==='string' ? body.term : '').trim();
+    if (!term) return err(400,'Missing term');
+    await env.DB.prepare("INSERT OR IGNORE INTO blocks (user_id,term) VALUES('',?)").bind(term).run();
+    return ok({ok:true});
+  }
+  const sharedDel = path.match(/^\/api\/blocks\/shared\/(.+)$/);
+  if (sharedDel && method==='DELETE') {
+    await env.DB.prepare("DELETE FROM blocks WHERE user_id='' AND term=?").bind(decodeURIComponent(sharedDel[1])).run();
+    return ok({ok:true});
+  }
+
   // blocks (terms + hidden patterns combined)
   if (path==='/api/blocks') {
     if (method==='GET') {
       const terms = await env.DB.prepare('SELECT term FROM blocks WHERE user_id=?').bind(uid).all();
+      const shared = await env.DB.prepare("SELECT term FROM blocks WHERE user_id=''").all();
       const pats  = await env.DB.prepare('SELECT pattern_label,pattern_regex FROM hidden_patterns WHERE user_id=?').bind(uid).all();
-      return ok({terms:terms.results.map(r=>r.term), patterns:pats.results.map(r=>({label:r.pattern_label,regex:r.pattern_regex}))});
+      return ok({terms:terms.results.map(r=>r.term), sharedTerms:shared.results.map(r=>r.term), patterns:pats.results.map(r=>({label:r.pattern_label,regex:r.pattern_regex}))});
     }
     if (method==='PUT') {
-      const {terms=[],patterns=[]} = await request.json();
-      await env.DB.prepare('DELETE FROM blocks WHERE user_id=?').bind(uid).run();
-      await env.DB.prepare('DELETE FROM hidden_patterns WHERE user_id=?').bind(uid).run();
-      for (const t of terms) await env.DB.prepare('INSERT OR IGNORE INTO blocks (user_id,term) VALUES(?,?)').bind(uid,t).run();
-      for (const p of patterns) await env.DB.prepare('INSERT OR IGNORE INTO hidden_patterns (user_id,pattern_label,pattern_regex) VALUES(?,?,?)').bind(uid,p.label,p.regex).run();
+      let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+      const terms = (Array.isArray(body.terms)?body.terms:[]).filter(t=>typeof t==='string'&&t.trim());
+      // Drop (don't reject) invalid regexes: legacy rows round-trip through the client
+      // verbatim, and a 400 here would silently brick every future save of the list.
+      const patterns = (Array.isArray(body.patterns)?body.patterns:[])
+        .filter(p=>p&&typeof p.label==='string'&&typeof p.regex==='string')
+        .filter(p=>{ try { new RegExp(p.regex); return true } catch { return false } });
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM blocks WHERE user_id=?').bind(uid),
+        env.DB.prepare('DELETE FROM hidden_patterns WHERE user_id=?').bind(uid),
+        ...terms.map(t=>env.DB.prepare('INSERT OR IGNORE INTO blocks (user_id,term) VALUES(?,?)').bind(uid,t)),
+        ...patterns.map(p=>env.DB.prepare('INSERT OR IGNORE INTO hidden_patterns (user_id,pattern_label,pattern_regex) VALUES(?,?,?)').bind(uid,p.label,p.regex)),
+      ]);
       return ok({ok:true});
     }
   }
@@ -307,11 +387,17 @@ async function handleAPI(request, url, session, env) {
     }
   }
 
-  // preferred companies (shared defaults + per-user custom)
+  // preferred companies (shared defaults + per-user custom; a per-user tier=0
+  // row is a tombstone that hides the shared seed of the same name)
   if (path==='/api/preferred-companies') {
     if (method==='GET') {
-      const rows = await env.DB.prepare('SELECT name,tier,category FROM preferred_companies WHERE user_id=? OR user_id=? ORDER BY tier,name').bind('',uid).all();
-      return ok(rows.results);
+      const rows = await env.DB.prepare('SELECT user_id,name,tier,category FROM preferred_companies WHERE user_id=? OR user_id=?').bind('',uid).all();
+      const merged = new Map();
+      for (const r of rows.results) if (r.user_id==='') merged.set(r.name, r);
+      for (const r of rows.results) if (r.user_id!=='') merged.set(r.name, r);
+      const out = [...merged.values()].filter(r=>r.tier>0).map(({name,tier,category})=>({name,tier,category}));
+      out.sort((a,b)=>a.tier-b.tier||a.name.localeCompare(b.name));
+      return ok(out);
     }
     if (method==='POST') {
       let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
@@ -323,7 +409,13 @@ async function handleAPI(request, url, session, env) {
   }
   const prefDel = path.match(/^\/api\/preferred-companies\/(.+)$/);
   if (prefDel && method==='DELETE') {
-    await env.DB.prepare('DELETE FROM preferred_companies WHERE user_id=? AND name=?').bind(uid,decodeURIComponent(prefDel[1])).run();
+    const name = decodeURIComponent(prefDel[1]);
+    const shared = await env.DB.prepare("SELECT 1 AS x FROM preferred_companies WHERE user_id='' AND name=?").bind(name).first();
+    if (shared) {
+      await env.DB.prepare('INSERT OR REPLACE INTO preferred_companies (user_id,name,tier,category) VALUES(?,?,0,?)').bind(uid,name,'hidden').run();
+    } else {
+      await env.DB.prepare('DELETE FROM preferred_companies WHERE user_id=? AND name=?').bind(uid,name).run();
+    }
     return ok({ok:true});
   }
 
@@ -377,7 +469,7 @@ document.getElementById('f').addEventListener('submit',async e=>{
   const fd=new FormData(e.target);
   const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:fd.get('username'),password:fd.get('password')})});
   if(res.ok)location.href='/';
-  else{const er=document.getElementById('er');er.textContent='Invalid username or password';er.style.display='block';btn.disabled=false;}
+  else{const d=await res.json().catch(()=>({}));const er=document.getElementById('er');er.textContent=d.error||'Invalid username or password';er.style.display='block';btn.disabled=false;}
 });
 </script>
 </body>
