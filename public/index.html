@@ -177,6 +177,29 @@ body{min-height:100vh}
 .pref-search:focus{border-color:var(--blue)}
 .btn-block-global{font:inherit;font-size:12px;color:var(--red);background:none;border:1.5px solid #FECACA;border-radius:6px;padding:3px 8px;cursor:pointer;flex-shrink:0}
 .btn-block-global:hover{background:var(--red-dim)}
+.btn-scrape2{font:inherit;font-size:13px;font-weight:600;background:var(--white);color:var(--text);border:1.5px solid var(--border-s);border-radius:8px;padding:8px 16px;cursor:pointer}
+.btn-scrape2:hover{border-color:var(--blue);color:var(--blue)}
+.cf-row{display:flex;align-items:flex-start;gap:10px;background:var(--white);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px}
+.cf-row-main{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+.cf-row-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cf-label{font-size:13px;font-weight:600;flex-shrink:0}
+.cf-mode-btn{font:inherit;font-size:11px;font-weight:600;border-radius:20px;padding:2px 10px;cursor:pointer;border:1.5px solid transparent}
+.cf-mode-must{background:var(--red-dim);color:var(--red);border-color:#FECACA}
+.cf-mode-ranked{background:var(--blue-dim);color:var(--blue);border-color:#BFDBFE}
+.cf-rank-badge{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.cf-rank-btns{display:inline-flex;gap:2px}
+.cf-rank-btns button{font:inherit;font-size:11px;color:var(--text-3);background:none;border:1px solid var(--border-s);border-radius:5px;width:20px;height:20px;cursor:pointer;line-height:1}
+.cf-rank-btns button:hover{color:var(--blue);border-color:var(--blue)}
+.cf-value-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cf-value-chip{font-size:12px;padding:3px 10px;border-radius:20px;border:1.5px solid var(--border-s);background:var(--white);cursor:pointer;color:var(--text-2)}
+.cf-value-chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.cf-num-input{font:inherit;font-size:13px;width:90px;padding:5px 8px;border:1.5px solid var(--border-s);border-radius:6px}
+.cf-remove{font:inherit;font-size:16px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0}
+.cf-remove:hover{color:var(--red)}
+.cf-company-row{display:flex;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid var(--border);font-size:13px}
+.cf-company-row:last-child{border-bottom:none}
+.cf-company-name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-company-meta{color:var(--text-3);font-size:12px;flex-shrink:0;min-width:70px;text-align:right}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
 .toast.hidden{opacity:0}
 .toast.actionable{pointer-events:auto}
@@ -222,12 +245,50 @@ body{min-height:100vh}
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <input type="file" id="imports-file-input" accept=".csv,.txt" style="display:none">
+      <button class="btn-scrape2" onclick="openCompanies()">🏢 Companies</button>
       <button class="btn-add btn-scrape" onclick="showScrape()">⚡ Scrape Sales Nav</button>
       <button class="btn-add" onclick="document.getElementById('imports-file-input').click()">+ Import CSV</button>
       <button class="btn-ghost" onclick="showScreen('settings')">⚙</button>
     </div>
   </div>
   <div id="imports-list"></div>
+</div>
+
+<!-- COMPANIES (per-job filter/export, skippable — docs/specs/2026-07-02-company-db-reframe.md) -->
+<div id="screen-companies" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <button class="btn-back" onclick="showScreen('imports');renderImports()">← Imports</button>
+      <div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:3px">Companies</div>
+        <div id="companies-job-title" style="font-size:20px;font-weight:700;letter-spacing:-.01em"></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-ghost" onclick="clearCompanyFilters()">Clear filters</button>
+      <button class="btn-add" onclick="exportCompanies()">⬇ Export LinkedIn URLs</button>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+    <select id="cf-add-field" onchange="addCompanyFilterFromSelect()" style="font:inherit;font-size:13px;padding:7px 10px;border:1.5px solid var(--border-s);border-radius:8px;background:var(--white)">
+      <option value="">+ Add filter…</option>
+      <option value="region">Region</option>
+      <option value="country">Country</option>
+      <option value="industry">Industry</option>
+      <option value="business_model">Business model</option>
+      <option value="stack">Tech stack</option>
+      <option value="employees">Employees</option>
+      <option value="founded_after">Founded after</option>
+      <option value="raised">Amount raised (USD)</option>
+      <option value="name">Name contains</option>
+    </select>
+    <span style="font-size:12px;color:var(--text-3)">Must-have filters exclude non-matches; ranked filters just sort results — click a chip to switch.</span>
+  </div>
+  <div id="cf-rows" style="display:flex;flex-direction:column;gap:10px;margin:14px 0 24px"></div>
+
+  <div id="cf-count" style="font-size:14px;font-weight:600;margin-bottom:10px"></div>
+  <div id="cf-preview"></div>
 </div>
 
 <!-- PICKER -->
@@ -746,7 +807,7 @@ let _navGuard=false;
 function _syncHash(screen){
   if(_navGuard)return;
   let h='';
-  if(screen==='imports')h='job/'+encodeURIComponent(currentJobId||'');
+  if(screen==='imports'||screen==='companies')h='job/'+encodeURIComponent(currentJobId||'');
   else if(screen==='triage')h='job/'+encodeURIComponent(currentJobId||'')+'/imp/'+(currentImportName===null?'~all':encodeURIComponent(currentImportName));
   else if(screen==='settings')h='settings';
   if(location.hash.slice(1)===h)return;
@@ -1430,6 +1491,169 @@ async function clearCandidates(){
   showToast('Candidates cleared');
 }
 
+// ── company DB filter/export screen (per job, skippable) ───────────
+let companyFilters=[];       // [{field,value,mode:'must'|'ranked',rank}]
+let companyFacets=null;      // {countries,industries,businessModels} — loaded once
+let companyResults={total:0,companies:[]};
+let _cfSearchDebounce=null,_cfSaveDebounce=null;
+const CF_LABELS={region:'Region',country:'Country',industry:'Industry',business_model:'Business model',stack:'Tech stack',employees:'Employees',founded_after:'Founded after',raised:'Amount raised',name:'Name contains'};
+const CF_REGION_OPTS=[['fr','France'],['eu','Europe'],['us','United States']];
+const CF_MULTI_FIELDS=['region','country','industry','business_model','stack'];
+
+async function openCompanies(){
+  if(!currentJobId)return;
+  const job=allJobs.find(j=>j.id===currentJobId);
+  document.getElementById('companies-job-title').textContent=job?job.title:currentJobId;
+  showScreen('companies');
+  if(!companyFacets)companyFacets=await fetch('/api/companies/facets').then(r=>r.ok?r.json():null).catch(()=>null);
+  const saved=await fetch(`/api/company-filters?job=${encodeURIComponent(currentJobId)}`).then(r=>r.ok?r.json():null).catch(()=>null);
+  companyFilters=(saved&&Array.isArray(saved.filters))?saved.filters:[];
+  renderCompanyFilters();
+  runCompanySearch();
+}
+function addCompanyFilterFromSelect(){
+  const sel=document.getElementById('cf-add-field');
+  const field=sel.value; sel.value='';
+  if(!field)return;
+  if(companyFilters.some(f=>f.field===field)){showToast('Filter already added');return}
+  const defaults={region:[],country:[],industry:[],business_model:[],stack:[],employees:{min:null,max:null},founded_after:null,raised:{min:null,max:null},name:''};
+  companyFilters.push({field,mode:'must',rank:0,value:defaults[field]});
+  renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function removeCompanyFilter(idx){
+  companyFilters.splice(idx,1);
+  renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function clearCompanyFilters(){
+  companyFilters=[];
+  renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function toggleFilterMode(idx){
+  const f=companyFilters[idx];
+  f.mode=f.mode==='must'?'ranked':'must';
+  if(f.mode==='ranked'){
+    const maxRank=Math.max(-1,...companyFilters.filter((x,i)=>i!==idx&&x.mode==='ranked').map(x=>x.rank));
+    f.rank=maxRank+1;
+  }
+  renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function moveFilterRank(idx,dir){
+  const ranked=companyFilters.filter(f=>f.mode==='ranked').sort((a,b)=>a.rank-b.rank);
+  const pos=ranked.indexOf(companyFilters[idx]);
+  const swapPos=pos+dir;
+  if(swapPos<0||swapPos>=ranked.length)return;
+  const tmp=ranked[pos].rank;ranked[pos].rank=ranked[swapPos].rank;ranked[swapPos].rank=tmp;
+  renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function toggleFilterValueChip(idx,val){
+  const f=companyFilters[idx];
+  const set=new Set(f.value||[]);
+  if(set.has(val))set.delete(val);else set.add(val);
+  f.value=[...set];
+  renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function setFilterNumField(idx,key,raw){
+  const f=companyFilters[idx];
+  const n=raw===''?null:parseInt(raw);
+  if(!f.value||typeof f.value!=='object'||Array.isArray(f.value))f.value={};
+  f.value[key]=Number.isFinite(n)?n:null;
+  runCompanySearch();saveCompanyFiltersDebounced();
+}
+function setFilterScalar(idx,raw){
+  const f=companyFilters[idx];
+  f.value=raw===''?null:(f.field==='founded_after'?parseInt(raw):raw);
+  runCompanySearch();saveCompanyFiltersDebounced();
+}
+function renderCompanyFilters(){
+  const el=document.getElementById('cf-rows');if(!el)return;
+  if(!companyFilters.length){el.innerHTML=`<div class="lists-empty">No filters yet — add one above, or export the full database as-is.</div>`;return}
+  const rankedList=companyFilters.filter(x=>x.mode==='ranked').sort((a,b)=>a.rank-b.rank);
+  el.innerHTML=companyFilters.map((f,idx)=>{
+    const rankPos=f.mode==='ranked'?rankedList.indexOf(f)+1:null;
+    let valueHtml='';
+    if(CF_MULTI_FIELDS.includes(f.field)){
+      const sel=new Set(f.value||[]);
+      if(f.field==='stack'){
+        valueHtml=`<div class="cf-value-chips">${(f.value||[]).map(v=>`<span class="cf-value-chip active" data-idx="${idx}" data-val="${esc(v)}">${esc(v)} ×</span>`).join('')}<input class="cf-num-input" style="width:150px" placeholder="add tech, Enter" onkeydown="if(event.key==='Enter'&&this.value.trim()){toggleFilterValueChip(${idx},this.value.trim());this.value=''}"></div>`;
+      } else {
+        const opts=f.field==='region'?CF_REGION_OPTS
+          :f.field==='country'?(companyFacets&&companyFacets.countries||[]).map(c=>[c.v,`${c.v} (${c.n})`])
+          :f.field==='industry'?(companyFacets&&companyFacets.industries||[]).map(c=>[c.v,`${c.v} (${c.n})`])
+          :(companyFacets&&companyFacets.businessModels||[]).map(c=>[c.v,`${c.v} (${c.n})`]);
+        valueHtml=opts.length?`<div class="cf-value-chips">${opts.map(([v,label])=>`<span class="cf-value-chip ${sel.has(v)?'active':''}" data-idx="${idx}" data-val="${esc(v)}">${esc(label)}</span>`).join('')}</div>`:`<div class="lists-empty" style="padding:2px 0;text-align:left">No values in the DB yet</div>`;
+      }
+    } else if(f.field==='employees'||f.field==='raised'){
+      const v=f.value||{};
+      valueHtml=`<div style="display:flex;align-items:center;gap:6px"><input type="number" class="cf-num-input" placeholder="min" value="${v.min??''}" oninput="setFilterNumField(${idx},'min',this.value)"><span style="color:var(--text-3)">–</span><input type="number" class="cf-num-input" placeholder="max" value="${v.max??''}" oninput="setFilterNumField(${idx},'max',this.value)"></div>`;
+    } else if(f.field==='founded_after'){
+      valueHtml=`<input type="number" class="cf-num-input" placeholder="e.g. 2015" value="${f.value??''}" oninput="setFilterScalar(${idx},this.value)">`;
+    } else if(f.field==='name'){
+      valueHtml=`<input type="text" class="cf-num-input" style="width:200px" placeholder="e.g. security" value="${esc(f.value||'')}" oninput="setFilterScalar(${idx},this.value)">`;
+    }
+    return `<div class="cf-row">
+      <div class="cf-row-main">
+        <div class="cf-row-head">
+          <span class="cf-label">${CF_LABELS[f.field]}</span>
+          <span class="cf-mode-btn ${f.mode==='must'?'cf-mode-must':'cf-mode-ranked'}" onclick="toggleFilterMode(${idx})">${f.mode==='must'?'Must-have':'Ranked'}</span>
+          ${f.mode==='ranked'?`<span class="cf-rank-badge">#${rankPos}</span><span class="cf-rank-btns"><button onclick="moveFilterRank(${idx},-1)" title="More important">↑</button><button onclick="moveFilterRank(${idx},1)" title="Less important">↓</button></span>`:''}
+        </div>
+        ${valueHtml}
+      </div>
+      <button class="cf-remove" onclick="removeCompanyFilter(${idx})" title="Remove">×</button>
+    </div>`;
+  }).join('');
+}
+function runCompanySearch(){
+  clearTimeout(_cfSearchDebounce);
+  _cfSearchDebounce=setTimeout(async()=>{
+    const jid=currentJobId;
+    const res=await fetch('/api/companies/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters:companyFilters,limit:20})}).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(currentJobId!==jid)return;
+    companyResults=res||{total:0,companies:[]};
+    renderCompanyPreview();
+  },300);
+}
+function renderCompanyPreview(){
+  const countEl=document.getElementById('cf-count');if(!countEl)return;
+  countEl.textContent=companyResults.total?`${companyResults.total.toLocaleString()} matching compan${companyResults.total===1?'y':'ies'}`:'No matches';
+  const el=document.getElementById('cf-preview');
+  if(!companyResults.companies.length){el.innerHTML='';return}
+  const rows=companyResults.companies.map(c=>{
+    const loc=[c.hq_city,c.hq_country].filter(Boolean).join(', ');
+    const emp=(c.employees_min||c.employees_max)?`${c.employees_min??'?'}–${c.employees_max??'?'}`:'';
+    return `<div class="cf-company-row">
+      <span class="cf-company-name">${esc(c.name)}</span>
+      <span class="cf-company-meta">${esc(loc)}</span>
+      <span class="cf-company-meta">${esc(c.industry||'')}</span>
+      <span class="cf-company-meta">${esc(emp)}</span>
+      ${/^https:\/\/([a-z]+\.)?linkedin\.com\//i.test(c.linkedin_url||'')?`<a href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" class="btn-ghost" style="padding:0">↗</a>`:'<span style="width:14px;display:inline-block"></span>'}
+    </div>`;
+  }).join('');
+  const more=companyResults.total>companyResults.companies.length?`<div class="lists-empty">+${(companyResults.total-companyResults.companies.length).toLocaleString()} more — export to get the full list</div>`:'';
+  el.innerHTML=rows+more;
+}
+async function exportCompanies(){
+  if(!currentJobId)return;
+  const res=await fetch('/api/companies/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters:companyFilters})}).catch(()=>null);
+  if(!res||!res.ok){showToast('Export failed');return}
+  const blob=await res.blob();
+  const job=allJobs.find(j=>j.id===currentJobId);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`companies-${(job?job.title:currentJobId).toLowerCase().replace(/[^a-z0-9]+/g,'-')}.csv`;
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(a.href);
+  showToast('Exported — upload to Sales Navigator as an account list');
+}
+function saveCompanyFiltersDebounced(){
+  clearTimeout(_cfSaveDebounce);
+  const jid=currentJobId,filters=companyFilters;
+  _cfSaveDebounce=setTimeout(()=>{
+    if(!jid)return;
+    fetch(`/api/company-filters?job=${encodeURIComponent(jid)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters,companyIds:[]})}).catch(()=>{});
+  },500);
+}
+
 function renderUSLayer(){
   const el=document.getElementById('us-layer-list');if(!el)return;
   if(!usCityList.length){el.innerHTML=`<div class="lists-empty">No US lookalike data loaded yet</div>`;return}
@@ -1476,6 +1700,10 @@ async function removePrefCompany(name){
 // INIT
 // ═══════════════════════════════════════════════════════════════════
 document.getElementById('imports-file-input').addEventListener('change',e=>{handleFile(e.target.files[0]);e.target.value=''});
+document.getElementById('cf-rows').addEventListener('click',e=>{
+  const chip=e.target.closest('.cf-value-chip[data-val]');
+  if(chip)toggleFilterValueChip(parseInt(chip.dataset.idx,10),chip.dataset.val);
+});
 loadState().then(()=>{renderPicker();if(location.hash.length>1)applyHash()}).catch(()=>showToast('Failed to load — please refresh'));
 </script>
 </html>
