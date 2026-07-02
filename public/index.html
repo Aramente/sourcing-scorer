@@ -870,8 +870,10 @@ function showScrape(){
 function hideScrape(){document.getElementById('overlay-scrape').classList.add('hidden')}
 async function _scrCheck(){
   let st=null;
-  try{st=await fetch(SCRAPER_URL+'/cookie-status',{signal:AbortSignal.timeout(1500)}).then(r=>r.json())}catch{}
-  if(!st){_scrBody('<div style="font-size:13px;color:var(--text-2);line-height:1.6">Local scraper not reachable on <b>localhost:3456</b>.<br>It runs as a LaunchAgent on the Mac where it\'s installed — if it should be up, check <code>launchctl list | grep linkedin</code>. Safari also blocks calls to localhost from this page; use Chrome.<br><br>You can always drop a CSV instead ("+ Import CSV").</div>');return}
+  // generous timeout: Chrome shows a "local network access" permission prompt on
+  // first use and the fetch stays pending until the user answers it
+  try{st=await fetch(SCRAPER_URL+'/cookie-status',{signal:AbortSignal.timeout(15000)}).then(r=>r.json())}catch{}
+  if(!st){_scrBody('<div style="font-size:13px;color:var(--text-2);line-height:1.6">Can\'t reach the local scraper on <b>localhost:3456</b>.<br><br><b>If Chrome asked to "access devices on your local network"</b>: click Allow, then Retry below. If you dismissed the prompt, re-enable it via the icon left of the address bar → Site settings → Local network access → Allow.<br><br>If no prompt appeared, the scraper may be down — it runs as a LaunchAgent on the Mac where it\'s installed; check <code>launchctl list | grep linkedin</code>. Safari blocks localhost calls entirely; use Chrome.<br><br>You can always drop a CSV instead ("+ Import CSV").</div><button class="btn-add" style="width:100%;margin-top:14px" onclick="showScrape()">Retry</button>');return}
   // server misspells the field as hasCooke — accept both in case it gets fixed
   if(!(st.hasCooke||st.hasCookie)){_scrRenderCookieForm();return}
   _scrRenderForm();
