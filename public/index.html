@@ -844,7 +844,25 @@ async function _scrCheck(){
   try{st=await fetch(SCRAPER_URL+'/cookie-status',{signal:AbortSignal.timeout(1500)}).then(r=>r.json())}catch{}
   if(!st){_scrBody('<div style="font-size:13px;color:var(--text-2);line-height:1.6">Local scraper not reachable on <b>localhost:3456</b>.<br>It runs as a LaunchAgent on the Mac where it\'s installed — if it should be up, check <code>launchctl list | grep linkedin</code>. Safari also blocks calls to localhost from this page; use Chrome.<br><br>You can always drop a CSV instead ("+ Import CSV").</div>');return}
   // server misspells the field as hasCooke — accept both in case it gets fixed
-  if(!(st.hasCooke||st.hasCookie)){_scrBody(`<div style="font-size:13px;color:var(--text-2);line-height:1.6">Scraper is running but the LinkedIn <b>li_at</b> cookie is missing or expired.<br>Set it at <a href="${SCRAPER_URL}" target="_blank" rel="noopener">localhost:3456</a>, then reopen this panel.</div>`);return}
+  if(!(st.hasCooke||st.hasCookie)){_scrRenderCookieForm();return}
+  _scrRenderForm();
+}
+function _scrRenderCookieForm(errMsg){
+  _scrBody(`
+    ${errMsg?`<div style="font-size:13px;color:var(--red);margin-bottom:12px">${esc(errMsg)}</div>`:''}
+    <div style="font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:12px">The scraper needs your LinkedIn <b>li_at</b> session cookie. In a logged-in LinkedIn tab: DevTools → Application → Cookies → linkedin.com → copy the <code>li_at</code> value. It's saved on this Mac only (the scraper's local config), never sent to the server.</div>
+    <div class="scrape-field-label">li_at cookie</div>
+    <input class="add-job-input" id="scrape-cookie" type="password" placeholder="AQED…" autocomplete="off" style="width:100%;margin-bottom:12px" onkeydown="if(event.key==='Enter')saveScraperCookie()">
+    <button class="btn-add" style="width:100%" onclick="saveScraperCookie()">Save cookie</button>
+  `);
+}
+async function saveScraperCookie(){
+  const liAt=(document.getElementById('scrape-cookie').value||'').trim();
+  if(!liAt){_scrRenderCookieForm('Paste the li_at value first.');return}
+  let res=null;
+  try{res=await fetch(SCRAPER_URL+'/save-cookie',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liAt})})}catch{}
+  if(!res||!res.ok){_scrRenderCookieForm('Failed to save — is the scraper still running?');return}
+  showToast('LinkedIn cookie saved');
   _scrRenderForm();
 }
 function _scrDefaultName(){const d=new Date();return'Sales Nav '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toTimeString().slice(0,5)}
@@ -858,6 +876,7 @@ function _scrRenderForm(errMsg){
       <div style="flex:2"><div class="scrape-field-label">Import name</div><input class="add-job-input" id="scrape-name" type="text" value="${esc(_scrDefaultName())}" style="width:100%"></div>
     </div>
     <button class="btn-add" style="width:100%" onclick="scrapeStart()">Start scraping</button>
+    <button class="btn-ghost" style="width:100%;margin-top:8px;text-align:center" onclick="_scrRenderCookieForm()">Update li_at cookie…</button>
   `);
 }
 function _scrRenderRunning(){
@@ -884,7 +903,7 @@ async function scrapeStart(){
   let res=null;
   try{res=await fetch(SCRAPER_URL+'/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,maxPages})})}catch{}
   if(!res){_scrRenderForm('Scraper stopped responding — is the LaunchAgent still running?');return}
-  if(!res.ok){const e=await res.json().catch(()=>({}));_scrRenderForm(e.error||'Scraper refused the job (HTTP '+res.status+')');return}
+  if(!res.ok){const e=await res.json().catch(()=>({}));const msg=e.error||'Scraper refused the job (HTTP '+res.status+')';if(/li_at|cookie/i.test(msg))_scrRenderCookieForm(msg);else _scrRenderForm(msg);return}
   _scr={running:true,es:null,jobId:currentJobId,importName,logs:[],count:0};
   _scrRenderRunning();
   const es=new EventSource(SCRAPER_URL+'/events');
