@@ -874,9 +874,22 @@ async function _scrCheck(){
   // first use and the fetch stays pending until the user answers it
   try{st=await fetch(SCRAPER_URL+'/cookie-status',{signal:AbortSignal.timeout(15000)}).then(r=>r.json())}catch{}
   if(!st){_scrBody('<div style="font-size:13px;color:var(--text-2);line-height:1.6">Can\'t reach the local scraper on <b>localhost:3456</b>.<br><br><b>If Chrome asked to "access devices on your local network"</b>: click Allow, then Retry below. If you dismissed the prompt, re-enable it via the icon left of the address bar → Site settings → Local network access → Allow.<br><br>If no prompt appeared, the scraper may be down — it runs as a LaunchAgent on the Mac where it\'s installed; check <code>launchctl list | grep linkedin</code>. Safari blocks localhost calls entirely; use Chrome.<br><br>You can always drop a CSV instead ("+ Import CSV").</div><button class="btn-add" style="width:100%;margin-top:14px" onclick="showScrape()">Retry</button>');return}
-  // Cookie no longer gates scraping: the scraper keeps its own logged-in
-  // Chrome profile; first run just asks for a one-time LinkedIn login.
-  _scrRenderForm();
+  // Preferred auth is the one-click Chrome extension (st.hasSession). If it
+  // hasn't run yet, guide the user there but still let them scrape (the
+  // scraper falls back to its saved profile / a login-wall wait).
+  if(!st.hasSession)_scrRenderNoSession();
+  else _scrRenderForm();
+}
+function _scrRenderNoSession(){
+  _scrBody(`
+    <div style="font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:14px">To scrape without logging in every time, send your LinkedIn session from Chrome once:<br><br>
+    <b>1.</b> In Chrome, make sure you're logged in to LinkedIn.<br>
+    <b>2.</b> Click the <b>"LinkedIn → Sourcing Scraper"</b> extension icon (green <b>OK</b> = done).<br>
+    <b>3.</b> Come back and hit Retry.<br><br>
+    First time? Install the extension: <code>chrome://extensions</code> → Developer mode → Load unpacked → <code>~/Desktop/linkedin-sn-scraper/chrome-cookie-exporter</code>.</div>
+    <button class="btn-add" style="width:100%" onclick="showScrape()">Retry</button>
+    <button class="btn-ghost" style="width:100%;margin-top:8px;text-align:center" onclick="_scrRenderForm()">Scrape anyway (I'll log in in the window)</button>
+  `);
 }
 function _scrRenderCookieForm(errMsg){
   _scrBody(`
