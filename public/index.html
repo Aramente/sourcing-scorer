@@ -93,6 +93,8 @@ body{min-height:100vh}
 .btn-view:hover,.btn-view.active{background:var(--indigo-dim);border-color:var(--indigo);color:var(--indigo)}
 .btn-li{font:inherit;font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;flex-shrink:0}
 .btn-li:hover{color:var(--indigo)}
+.cand-facets{font-size:11px;color:var(--text-3);margin-top:3px}
+.facet-cycle{font:inherit;font-size:11px;color:var(--indigo);background:none;border:none;border-bottom:1px dotted var(--indigo);cursor:pointer;padding:0;line-height:1.3}
 .cand-reasons{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
 .reason-tag{font-size:11px;font-weight:500;background:var(--blue-dim);color:var(--blue);padding:2px 8px;border-radius:20px}
 .pager{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px 0 8px}
@@ -192,6 +194,10 @@ body{min-height:100vh}
 .import-card-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .btn-del-import{font:inherit;font-size:15px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:3px 7px;border-radius:6px;transition:color .12s,background .12s;line-height:1}
 .btn-del-import:hover{color:var(--red);background:var(--red-dim)}
+/* ── SALES NAV SCRAPER ── */
+.btn-scrape{background:#4F46E5}
+.scrape-log{background:#0F172A;color:#94A3B8;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;border-radius:8px;padding:10px 12px;height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.scrape-field-label{font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:4px}
 /* ── USER BANNER ── */
 #user-banner{position:fixed;top:0;right:0;z-index:1000;padding:6px 14px;display:flex;align-items:center;gap:10px;font-size:12px;color:#94A3B8}
 #user-banner form{margin:0}
@@ -216,6 +222,7 @@ body{min-height:100vh}
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <input type="file" id="imports-file-input" accept=".csv,.txt" style="display:none">
+      <button class="btn-add btn-scrape" onclick="showScrape()">⚡ Scrape Sales Nav</button>
       <button class="btn-add" onclick="document.getElementById('imports-file-input').click()">+ Import CSV</button>
       <button class="btn-ghost" onclick="showScreen('settings')">⚙</button>
     </div>
@@ -367,6 +374,15 @@ body{min-height:100vh}
     <div id="refine-questions"></div>
   </div>
 </div>
+<div id="overlay-scrape" class="overlay hidden">
+  <div class="overlay-backdrop" onclick="hideScrape()"></div>
+  <div class="overlay-panel">
+    <div class="overlay-title">Scrape Sales Navigator</div>
+    <div class="overlay-sub">Runs the local scraper on this machine, then imports the leads directly — no CSV needed.</div>
+    <button class="overlay-close" onclick="hideScrape()">×</button>
+    <div id="scrape-body"></div>
+  </div>
+</div>
 <div id="toast" class="toast hidden"></div>
 
 <script>
@@ -468,6 +484,7 @@ function detectFormat(headers){
   if(headers.includes('Full Name')||headers.includes('Job Title')||headers.includes('Nom complet')||headers.includes('Intitulé du poste'))return'sourcing';
   if((headers.includes('First Name')||headers.includes('Prénom'))&&(headers.includes('Position')||headers.includes('Poste')))return'connections';
   if(headers.includes('LinkedIn profile URL')||(headers.includes('Name')&&headers.includes('Job')&&headers.includes('Headline')))return'phantombuster';
+  if(headers.includes('Profile URL')&&headers.includes('Name')&&headers.includes('Title'))return'salesnav';
   return'unknown';
 }
 function _splitTitleCompany(title,company){if(!company&&title.includes(' @ ')){const idx=title.lastIndexOf(' @ ');return{title:title.slice(0,idx).trim(),company:title.slice(idx+3).trim()}}return{title,company}}
@@ -484,6 +501,11 @@ function rowToConnection(row,fmt){
     const title=row['Job']||row['Headline']||'';
     const company=row['Company']||'';
     return{name:nm,firstName:fn||'',lastName:rest.join(' '),company,title,url:row['LinkedIn profile URL']||row['LinkedIn Sales Nav URL']||''}
+  }
+  if(fmt==='salesnav'){
+    const nm=(row['Name']||'').trim();const[fn,...rest]=nm.split(' ');
+    const{title,company}=_splitTitleCompany(row['Title']||'',row['Company']||'');
+    return{name:nm,firstName:fn||'',lastName:rest.join(' '),company,title,url:row['Profile URL']||''}
   }
   const rawTitle=row['Position']||row['Poste']||'';
   const rawCompany=row['Company']||row['Entreprise']||row['Société']||'';
@@ -566,7 +588,124 @@ function dkey(jid,c){return jid+'::'+ckey(c)}
 function companyReputation(company){if(!company)return 0;const co=company.toLowerCase();let kept=0,skipped=0;for(const[k,v]of Object.entries(decisions)){if(v!=='kept'&&v!=='excl')continue;const sep=k.indexOf('::');if(sep===-1)continue;const cpart=k.slice(sep+2);const pipe=cpart.lastIndexOf('|');if(pipe===-1)continue;const dc=cpart.slice(pipe+1).toLowerCase();if(dc===co){if(v==='kept')kept++;else skipped++;}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
 function _wordIn(hay,needle,allowPrefix){let i=hay.indexOf(needle);while(i!==-1){const pre=i===0||!/[a-z0-9]/.test(hay[i-1]);const j=i+needle.length;const post=j===hay.length||!/[a-z0-9]/.test(hay[j]);if(pre&&(post||(allowPrefix&&needle.length>=6)))return true;i=hay.indexOf(needle,i+1)}return false}
 function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}let best=0;for(const[key,c]of prefMap){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){const b=c.tier===1?15:10;if(b>best)best=b}}return best}
-function adjustedScore(c){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)}
+function adjustedScore(c,jid=currentJobId){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)+learnedAdjustment(c,jid)}
+
+// ═══════════════════════════════════════════════════════════════════
+// KNOWLEDGE BASE — LLM-taught facets + weights learned from decisions
+// ═══════════════════════════════════════════════════════════════════
+let facetWeights={};   // family → {facet_key:{k,x}}, lazily fetched
+const SETTING_CYCLE=['in_house','cabinet','freelance','interim','unknown'];
+const _SETTING_PENALTY={cabinet:-25,freelance:-15,interim:-20};
+function jobFamilyById(jid){const j=allJobs.find(x=>x.id===jid);return j?(famTop2(j.title)[0]||'other'):'other'}
+function facetKeys(f){return f?['fam='+f.fam,'seniority='+f.seniority,'setting='+f.setting]:[]}
+async function loadWeights(family){
+  if(facetWeights[family])return;
+  const d=await apiFetch('/api/weights?family='+encodeURIComponent(family),null);
+  if(d&&!facetWeights[family])facetWeights[family]=d;
+}
+// Empirical adjustment from past keep/exclude decisions in this job family.
+// Log-odds with +1 smoothing; a facet only weighs in after 5 decisions touch it.
+function learnedAdjustment(c,jid){
+  const f=c.facets;if(!f)return 0;
+  const w=facetWeights[jobFamilyById(jid)];if(!w)return 0;
+  let adj=0;
+  for(const key of facetKeys(f)){
+    const row=w[key];if(!row)continue;
+    if((row.k+row.x)<5)continue;
+    adj+=Math.max(-10,Math.min(10,Math.round(8*Math.log2((row.k+1)/(row.x+1)))));
+  }
+  return Math.max(-20,Math.min(20,adj));
+}
+function _learnDelta(k,prev,next){
+  if(prev===next)return;
+  const dk_=(next==='kept'?1:0)-(prev==='kept'?1:0);
+  const dx=(next==='excl'?1:0)-(prev==='excl'?1:0);
+  if(!dk_&&!dx)return;
+  const i=_pageKeys.indexOf(k);
+  const c=i>=0?_pageCands[i]:(scoredByJob[currentJobId]||[]).find(x=>dkey(currentJobId,x)===k);
+  if(!c||!c.facets)return;
+  const family=jobFamilyById(currentJobId);
+  const w=facetWeights[family]||(facetWeights[family]={});
+  for(const key of facetKeys(c.facets)){
+    const row=w[key]||(w[key]={k:0,x:0});
+    row.k=Math.max(0,row.k+dk_);row.x=Math.max(0,row.x+dx);
+  }
+  fetch('/api/learn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({family,facets:c.facets,prev:prev||null,next:next||null})}).catch(()=>{});
+}
+// Classify unique titles/companies through the server-side knowledge base.
+// Cache hits return instantly; misses are batched to the LLM — we loop until
+// pending=0 (or no forward progress). First import is slow, later ones ~free.
+async function classifyAll(conns){
+  const titles=[...new Set(conns.map(c=>c.title).filter(Boolean))];
+  const comps=[...new Set(conns.map(c=>c.company).filter(Boolean))];
+  const outT={},outC={};
+  let firstHits=null,degraded=false,guard=0,lastPend=Infinity;
+  let pendT=titles,pendC=comps;
+  while((pendT.length||pendC.length)&&guard++<60){
+    const done=(titles.length+comps.length)-(pendT.length+pendC.length);
+    showProgress(`Classifying titles & companies… ${done}/${titles.length+comps.length} (new ones are learned once, then cached forever)`);
+    let res;
+    try{res=await fetch('/api/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titles:pendT.slice(0,400),companies:pendC.slice(0,400)})})}catch{break}
+    if(res.status===503){degraded=true;break}
+    if(!res.ok)break;
+    const d=await res.json().catch(()=>null);
+    if(!d)break;
+    Object.assign(outT,d.titles||{});Object.assign(outC,d.companies||{});
+    if(firstHits===null)firstHits=Object.keys(d.titles||{}).length+Object.keys(d.companies||{}).length;
+    pendT=titles.filter(t=>!(t in outT));pendC=comps.filter(c=>!(c in outC));
+    const pend=pendT.length+pendC.length;
+    if(pend>=lastPend){if(d.llmError)showToast('Classification partly failed — keyword scoring for the rest');break}
+    lastPend=pend;
+  }
+  const resolved=Object.keys(outT).length+Object.keys(outC).length;
+  return{titles:outT,companies:outC,degraded,stats:{cached:firstHits||0,fresh:Math.max(0,resolved-(firstHits||0))}};
+}
+// Facet-based scoring — used instead of keyword scoreMatch when facets exist.
+function scoreWithFacets(conn,job,f,coKind){
+  const reasons=[];let score=0;
+  const jobFams=famTop2(job.title);let jobFam=jobFams[0]||null;
+  if(jobFam==='software'&&jobFams.length>1&&_SPECIFIC_FAMS.has(jobFams[1]))jobFam=jobFams[1];
+  const sameFam=Boolean(jobFam&&f.fam===jobFam);
+  const adjMatch=!sameFam&&Boolean(jobFam&&f.fam&&f.fam!=='other')&&_adjacentFamily(f.fam,jobFam);
+  if(sameFam){score+=48;reasons.push(`same function: ${jobFam.replace(/_/g,' ')}`)}
+  else if(adjMatch){score+=22;reasons.push(`adjacent: ${f.fam.replace(/_/g,' ')} ≈ ${jobFam.replace(/_/g,' ')}`)}
+  if(sameFam||adjMatch){
+    const connToks=_tokens(conn.title),jobToks=_tokens(job.title);
+    const overlap=[...connToks].filter(t=>jobToks.has(t));
+    if(overlap.length){score+=Math.min(22,8*overlap.length);reasons.push('shared: '+[...overlap].sort().join(', '))}
+  }
+  const cs=f.seniority||'mid',js=inferSeniority(job.title);
+  const csIdx=SENIORITY_ORDER.indexOf(cs),jsIdx=SENIORITY_ORDER.indexOf(js);
+  if(csIdx>=0){
+    const dist=Math.abs(csIdx-jsIdx),below=csIdx<jsIdx;
+    if(dist===0){score+=13;reasons.push(`seniority fit: ${js}`)}
+    else if(dist===1){if(js==='exec'&&jobFam==='ae_exec'&&cs==='lead'){}else if(below)score+=8;else score+=4;reasons.push(`near seniority: ${cs}→${js}`)}
+    else if(dist===2){if(!below)score-=20;reasons.push(below?`near seniority: ${cs}→${js}`:`seniority gap: ${cs}→${js}`)}
+    else{score-=35;reasons.push(`seniority gap: ${cs}→${js}`)}
+  }
+  const pen=_SETTING_PENALTY[f.setting];
+  if(pen){score+=pen;reasons.push(f.setting==='cabinet'?'in cabinet / client-serving firm':f.setting==='freelance'?'freelance / independent':'interim')}
+  if(coKind==='accounting_firm'&&f.setting!=='cabinet'){score-=15;reasons.push('employer is an accounting firm')}
+  if(coKind==='recruitment'){score-=10;reasons.push('employer is a recruiting agency')}
+  if(coKind==='freelance_self'){score-=10;reasons.push('self-employed entity')}
+  if((f.flags||[]).includes('own_practice')){score-=20;reasons.push('runs own practice')}
+  if((f.flags||[]).includes('student')){score-=15;reasons.push('student')}
+  if(_securityOverlap(conn.title)&&(_securityOverlap(job.title)||jobFam==='security_eng')){score+=10;reasons.push('works in security/cyber')}
+  return{score:Math.min(150,Math.round(score)),reasons};
+}
+// Manual facet correction: click the setting on a card to cycle it. Saved with
+// source='manual' — the LLM never overwrites it, and future imports use it.
+function cycleSetting(k){
+  const i=_pageKeys.indexOf(k);
+  const c=i>=0?_pageCands[i]:null;
+  if(!c||!c.facets)return;
+  const next=SETTING_CYCLE[(SETTING_CYCLE.indexOf(c.facets.setting)+1)%SETTING_CYCLE.length];
+  for(const x of scoredByJob[currentJobId]||[])if(x.title===c.title&&x.facets)x.facets.setting=next;
+  fetch('/api/facets/title',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:c.title,facets:c.facets})})
+    .then(r=>{if(!r.ok)throw 0;showToast(`Setting → ${next.replace('_',' ')} · saved for all future imports`)})
+    .catch(()=>showToast('Failed to save correction'));
+  renderList();
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // UI HELPERS
@@ -609,6 +748,7 @@ function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')render
 let _toastTimer;
 function _hideToast(){const t=document.getElementById('toast');t.classList.add('hidden');t.classList.remove('actionable')}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');t.classList.remove('actionable');clearTimeout(_toastTimer);_toastTimer=setTimeout(_hideToast,2500)}
+function showProgress(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.remove('hidden');t.classList.remove('actionable');clearTimeout(_toastTimer)}
 function showUndoToast(msg,undoFn){
   const t=document.getElementById('toast');
   t.innerHTML=`${esc(msg)}<button class="toast-undo" id="toast-undo-btn">Undo</button>`;
@@ -642,31 +782,135 @@ function handleFile(file){
   reader.onload=e=>applyCSV(e.target.result,importName);
   reader.readAsText(file,'utf-8');
 }
+async function importConnections(conns,importName,jobId,totalRows){
+  const job=allJobs.find(j=>j.id===jobId);
+  if(!job)return{err:'No job selected.'};
+  const cls=await classifyAll(conns);
+  if(cls.degraded)showToast('LLM classification not configured — using keyword scoring');
+  await loadWeights(jobFamilyById(jobId));
+  const toSave=[];
+  let below=0,filtered=0;
+  for(const c of conns){
+    const f=cls.titles[c.title]||null;
+    const coKind=(cls.companies[c.company]||{}).kind||null;
+    const m=f?scoreWithFacets(c,job,f,coKind):scoreMatch(c,job);
+    if(m.score+companyPreferenceBonus(c.company)<POSSIBLE){below++;continue}
+    if(!passesFilters(c)){filtered++;continue}
+    toSave.push({name:c.name,first_name:c.firstName||'',last_name:c.lastName||'',company:c.company||'',title:c.title,linkedin_url:c.url||'',dedup_key:ckey(c),score:m.score,reasons:m.reasons,
+      facets:f?{fam:f.fam,seniority:f.seniority,setting:f.setting,flags:f.flags||[],co:coKind}:null});
+  }
+  if(!toSave.length)return{empty:true,count:0,skipped:0,below,filtered,kb:cls.stats,totalRows:totalRows??conns.length};
+  const res=await fetch(`/api/jobs/${jobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave,importName})}).catch(()=>null);
+  if(!res||!res.ok)return{err:'Failed to save candidates.'};
+  const {count,skipped}=await res.json();
+  const fresh=await fetch(`/api/jobs/${jobId}/candidates`).then(r=>r.json()).catch(()=>null);
+  if(Array.isArray(fresh)){scoredByJob[jobId]=fresh;const ht=settings.hotThreshold;candidateCounts[jobId]={total:fresh.length,hot:fresh.filter(c=>adjustedScore(c,jobId)>=ht).length,warm:fresh.filter(c=>adjustedScore(c,jobId)>=POSSIBLE&&adjustedScore(c,jobId)<ht).length};}
+  return{count,skipped,below,filtered,kb:cls.stats,totalRows:totalRows??conns.length};
+}
+function importSummary(r){
+  const kb=r.kb&&(r.kb.cached||r.kb.fresh)?` · KB: ${r.kb.cached} known, ${r.kb.fresh} newly learned`:'';
+  if(r.empty)return`No matches in ${r.totalRows} rows — ${r.below} below score ${POSSIBLE}, ${r.filtered} auto-filtered${kb}`;
+  return`${r.count} added${r.skipped?' · '+r.skipped+' duplicate'+(r.skipped>1?'s':''):''}${r.below?' · '+r.below+' below score '+POSSIBLE:''}${r.filtered?' · '+r.filtered+' auto-filtered':''}${kb}`;
+}
 async function applyCSV(text,importName){
   const errEl=document.getElementById('upload-error');
   const parsed=parseCSV(text);
   const fmt=detectFormat(parsed.headers);
-  if(fmt==='unknown'){errEl.textContent='Unknown CSV format. Supported: LinkedIn "Find People to Hire", Connections export, or PhantomBuster Sales Navigator export.';errEl.style.display='block';return}
-  const job=allJobs.find(j=>j.id===currentJobId);
-  if(!job){errEl.textContent='No job selected.';errEl.style.display='block';return}
+  if(fmt==='unknown'){errEl.textContent='Unknown CSV format. Supported: LinkedIn "Find People to Hire", Connections export, PhantomBuster export, or the local Sales Nav scraper CSV.';errEl.style.display='block';return}
   const newConns=parsed.rows.map(r=>rowToConnection(r,fmt)).filter(c=>c.title||c.company);
-  const toSave=[];
-  let below=0,filtered=0;
-  for(const c of newConns){
-    const m=scoreMatch(c,job);
-    if(m.score+companyPreferenceBonus(c.company)<POSSIBLE){below++;continue}
-    if(!passesFilters(c)){filtered++;continue}
-    toSave.push({name:c.name,first_name:c.firstName||'',last_name:c.lastName||'',company:c.company||'',title:c.title,linkedin_url:c.url||'',dedup_key:ckey(c),score:m.score,reasons:m.reasons});
-  }
-  if(!toSave.length){showToast(`No matches in ${parsed.rows.length} rows — ${below} below score ${POSSIBLE}, ${filtered} auto-filtered`);return}
-  const res=await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({candidates:toSave,importName})});
-  if(!res.ok){errEl.textContent='Failed to save candidates.';errEl.style.display='block';return}
-  const {count,skipped}=await res.json();
-  const fresh=await fetch(`/api/jobs/${currentJobId}/candidates`).then(r=>r.json()).catch(()=>null);
-  if(Array.isArray(fresh)){scoredByJob[currentJobId]=fresh;const ht=settings.hotThreshold;candidateCounts[currentJobId]={total:fresh.length,hot:fresh.filter(c=>adjustedScore(c)>=ht).length,warm:fresh.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length};}
-  showToast(`${count} added${skipped?' · '+skipped+' duplicate'+(skipped>1?'s':''):''}${below?' · '+below+' below score '+POSSIBLE:''}${filtered?' · '+filtered+' auto-filtered':''}`);
+  const r=await importConnections(newConns,importName,currentJobId,parsed.rows.length);
+  if(r.err){errEl.textContent=r.err;errEl.style.display='block';return}
+  showToast(importSummary(r));
+  if(r.empty)return;
   await refreshImports();
   showScreen('imports');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SALES NAV SCRAPER (local service on Kevin's Mac — see linkedin-sn-scraper)
+// ═══════════════════════════════════════════════════════════════════
+const SCRAPER_URL='http://localhost:3456';
+let _scr={running:false,es:null,jobId:null,importName:'',logs:[],count:0};
+function _scrBody(html){const el=document.getElementById('scrape-body');if(el)el.innerHTML=html}
+function showScrape(){
+  document.getElementById('overlay-scrape').classList.remove('hidden');
+  if(_scr.running){_scrRenderRunning();return}
+  _scrBody('<div class="lists-empty">Checking local scraper…</div>');
+  _scrCheck();
+}
+function hideScrape(){document.getElementById('overlay-scrape').classList.add('hidden')}
+async function _scrCheck(){
+  let st=null;
+  try{st=await fetch(SCRAPER_URL+'/cookie-status',{signal:AbortSignal.timeout(1500)}).then(r=>r.json())}catch{}
+  if(!st){_scrBody('<div style="font-size:13px;color:var(--text-2);line-height:1.6">Local scraper not reachable on <b>localhost:3456</b>.<br>It runs as a LaunchAgent on the Mac where it\'s installed — if it should be up, check <code>launchctl list | grep linkedin</code>. Safari also blocks calls to localhost from this page; use Chrome.<br><br>You can always drop a CSV instead ("+ Import CSV").</div>');return}
+  // server misspells the field as hasCooke — accept both in case it gets fixed
+  if(!(st.hasCooke||st.hasCookie)){_scrBody(`<div style="font-size:13px;color:var(--text-2);line-height:1.6">Scraper is running but the LinkedIn <b>li_at</b> cookie is missing or expired.<br>Set it at <a href="${SCRAPER_URL}" target="_blank" rel="noopener">localhost:3456</a>, then reopen this panel.</div>`);return}
+  _scrRenderForm();
+}
+function _scrDefaultName(){const d=new Date();return'Sales Nav '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toTimeString().slice(0,5)}
+function _scrRenderForm(errMsg){
+  _scrBody(`
+    ${errMsg?`<div style="font-size:13px;color:var(--red);margin-bottom:12px">${esc(errMsg)}</div>`:''}
+    <div class="scrape-field-label">Sales Navigator search URL</div>
+    <input class="add-job-input" id="scrape-url" type="url" placeholder="https://www.linkedin.com/sales/search/people?…" style="width:100%;margin-bottom:12px">
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <div style="flex:1"><div class="scrape-field-label">Max pages</div><input class="add-job-input" id="scrape-pages" type="number" min="1" max="100" value="10" style="width:100%"></div>
+      <div style="flex:2"><div class="scrape-field-label">Import name</div><input class="add-job-input" id="scrape-name" type="text" value="${esc(_scrDefaultName())}" style="width:100%"></div>
+    </div>
+    <button class="btn-add" style="width:100%" onclick="scrapeStart()">Start scraping</button>
+  `);
+}
+function _scrRenderRunning(){
+  _scrBody(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:600">Scraping… <span id="scrape-count">${_scr.count}</span> leads</div>
+      <button class="btn-block-global" onclick="scrapeStop()">Stop &amp; import</button>
+    </div>
+    <div class="scrape-log" id="scrape-log"></div>
+    <div style="font-size:12px;color:var(--text-3);margin-top:10px">You can close this panel — the import finishes in the background.</div>
+  `);
+  _scrUpdateLog();
+}
+function _scrUpdateLog(){
+  const el=document.getElementById('scrape-log');if(!el)return;
+  el.textContent=_scr.logs.slice(-100).join('\n');el.scrollTop=el.scrollHeight;
+  const c=document.getElementById('scrape-count');if(c)c.textContent=_scr.count;
+}
+async function scrapeStart(){
+  const url=(document.getElementById('scrape-url').value||'').trim();
+  if(!/^https:\/\/www\.linkedin\.com\/sales\//.test(url)){_scrRenderForm('Paste a Sales Navigator search URL — it starts with linkedin.com/sales/…');const inp=document.getElementById('scrape-url');if(inp)inp.value=url;return}
+  const maxPages=Math.max(1,Math.min(100,parseInt(document.getElementById('scrape-pages').value,10)||10));
+  const importName=(document.getElementById('scrape-name').value||'').trim()||_scrDefaultName();
+  let res=null;
+  try{res=await fetch(SCRAPER_URL+'/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,maxPages})})}catch{}
+  if(!res){_scrRenderForm('Scraper stopped responding — is the LaunchAgent still running?');return}
+  if(!res.ok){const e=await res.json().catch(()=>({}));_scrRenderForm(e.error||'Scraper refused the job (HTTP '+res.status+')');return}
+  _scr={running:true,es:null,jobId:currentJobId,importName,logs:[],count:0};
+  _scrRenderRunning();
+  const es=new EventSource(SCRAPER_URL+'/events');
+  _scr.es=es;
+  es.onmessage=ev=>{
+    let d;try{d=JSON.parse(ev.data)}catch{return}
+    if(d.type==='log'){if(d.count)_scr.count=d.count;_scr.logs.push(d.msg);if(_scr.logs.length>200)_scr.logs.shift();_scrUpdateLog()}
+    else if(d.type==='done'||d.type==='aborted'){es.close();_scr.es=null;_scr.running=false;_scrFinish(d.type==='aborted')}
+    else if(d.type==='error'){es.close();_scr.es=null;_scr.running=false;_scrRenderForm(d.msg||'Scrape failed — check the scraper logs');showToast('Sales Nav scrape failed')}
+  };
+  es.onerror=()=>{
+    if(es.readyState===EventSource.CLOSED){_scr.es=null;_scr.running=false;_scrRenderForm('Lost connection to the scraper mid-run.');showToast('Lost connection to Sales Nav scraper')}
+  };
+}
+async function scrapeStop(){try{await fetch(SCRAPER_URL+'/stop',{method:'POST'})}catch{}}
+async function _scrFinish(aborted){
+  let leads=null;
+  try{leads=await fetch(SCRAPER_URL+'/leads.json').then(r=>r.json())}catch{}
+  if(!Array.isArray(leads)||!leads.length){_scrRenderForm(aborted?'Stopped — no leads captured.':'Scrape finished but returned no leads.');return}
+  const conns=leads.map(l=>{const nm=(l.name||'').trim();const[fn,...rest]=nm.split(' ');const{title,company}=_splitTitleCompany(l.title||'',l.company||'');return{name:nm,firstName:fn||'',lastName:rest.join(' '),company,title,url:l.profileUrl||''}}).filter(c=>c.name&&(c.title||c.company));
+  const r=await importConnections(conns,_scr.importName,_scr.jobId,leads.length);
+  if(r.err){_scrRenderForm(r.err);showToast('Sales Nav import failed');return}
+  const summary=(aborted?'Stopped early — ':'')+importSummary(r);
+  showToast(summary);
+  _scrBody(`<div style="font-size:14px;line-height:1.6"><b>${leads.length} leads scraped.</b><br>${esc(summary)}</div><button class="btn-add" style="width:100%;margin-top:16px" onclick="hideScrape()">Done</button>`);
+  if(currentJobId===_scr.jobId)await refreshImports();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -681,8 +925,8 @@ function _jobCard(job){
   const total=cnts.total||0;
   const scored=scoredByJob[jid];
   const approx=!scored;
-  const hot=scored?scored.filter(c=>adjustedScore(c)>=ht).length:(cnts.hot||0);
-  const warm=scored?scored.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht).length:(cnts.warm||0);
+  const hot=scored?scored.filter(c=>adjustedScore(c,jid)>=ht).length:(cnts.hot||0);
+  const warm=scored?scored.filter(c=>adjustedScore(c,jid)>=POSSIBLE&&adjustedScore(c,jid)<ht).length:(cnts.warm||0);
   const hotB=hot?`<span class="count-badge count-hot">${approx?'~':''}${hot} HOT</span>`:'';
   const warmB=warm?`<span class="count-badge count-warm">${approx?'~':'+'}${warm} WARM</span>`:'';
   const totalB=(total&&!hot&&!warm)?`<span class="count-badge count-zero">${total} candidates</span>`:'';
@@ -734,6 +978,7 @@ function onEmptyJobInput(val){
 // ═══════════════════════════════════════════════════════════════════
 async function openJob(jobId){
   currentJobId=jobId;currentImportName=null;
+  loadWeights(jobFamilyById(jobId));
   const job=allJobs.find(j=>j.id===jobId);
   document.getElementById('imports-job-title').textContent=job?job.title:jobId;
   showScreen('imports');
@@ -875,8 +1120,11 @@ function renderList(){
     const liBtn=c.url?`<button class="btn-li" data-url="${esc(c.url)}" onclick="openLI(this.dataset.url)">LinkedIn ↗</button>`:'';
     const rep=companyReputation(c.company);
     const pref=companyPreferenceBonus(c.company);
-    const adjNote=(rep!==0||pref!==0)?` <span style="font-size:11px;color:var(--text-3)">(${rep!==0?(rep>0?'+':'')+rep:''}${pref>0?(rep!==0?' ':'')+'⭐+'+pref:''})</span>`:'';
+    const learn=learnedAdjustment(c,currentJobId);
+    const adjNote=(rep!==0||pref!==0||learn!==0)?` <span style="font-size:11px;color:var(--text-3)">(${rep!==0?(rep>0?'+':'')+rep:''}${pref>0?(rep!==0?' ':'')+'⭐+'+pref:''}${learn!==0?((rep!==0||pref>0)?' ':'')+'📈'+(learn>0?'+':'')+learn:''})</span>`:'';
     const blkBtn=c.company?` <button class="btn-block-co" data-co="${esc(c.company)}" onclick="blockCompany(this.dataset.co)" title="Block this company">🚫</button>`:'';
+    const f=c.facets;
+    const facetLine=f?`<div class="cand-facets">${esc((f.fam||'other').replace(/_/g,' '))} · ${esc(f.seniority||'mid')} · <button class="facet-cycle" data-k="${esc(k)}" onclick="cycleSetting(this.dataset.k)" title="Wrong? Click to cycle: in-house → cabinet → freelance → interim → unknown">${esc((f.setting||'unknown').replace(/_/g,' '))}</button></div>`:'';
     return`<div class="cand-card${dec!=='undet'?' decided':''}${i===_selIdx?' selected':''}" data-k="${esc(k)}">
       <div class="cand-header">
         <div class="cand-score score-${tier}">${adj}${adjNote}</div>
@@ -884,6 +1132,7 @@ function renderList(){
           <div class="cand-name">${esc(c.name)}</div>
           <div class="cand-title">${esc(c.title)}</div>
           <div class="cand-company">${pref>0?'⭐ ':''}${esc(c.company)}${blkBtn}</div>
+          ${facetLine}
         </div>
         <div class="cand-actions">${liBtn}<button class="btn-view${vA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'view')">👁 Viewed</button><button class="btn-keep${kA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'kept')">✓ Keep</button><button class="btn-skip${xA}" data-k="${esc(k)}" onclick="decide(this.dataset.k,'excl')">✕ Skip</button></div>
       </div>
@@ -913,7 +1162,9 @@ function updateDecisionUI(k){
   updateStats();renderControls();updateRefineFab();
 }
 function _setDecision(k,val,save){
+  const prevVal=decisions[k];
   if(val!==undefined)decisions[k]=val;else delete decisions[k];
+  _learnDelta(k,prevVal,val);
   updateDecisionUI(k);
   if(save)saveDec(k,val||null);
 }
@@ -926,6 +1177,7 @@ function decide(k,action){
   const prev=decisions[k];
   const next=prev===action?undefined:action;
   if(next)decisions[k]=next;else delete decisions[k];
+  _learnDelta(k,prev,next);
   _lastUndo=()=>_setDecision(k,prev,true);
   updateDecisionUI(k);
   if(next==='kept'||next==='excl'){
@@ -995,7 +1247,7 @@ document.addEventListener('keydown',e=>{
   const tag=(e.target&&e.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||tag==='select'||e.metaKey||e.ctrlKey||e.altKey)return;
   const overlayOpen=document.querySelector('.overlay:not(.hidden)');
-  if(e.key==='Escape'){if(overlayOpen){hideLists();hideRefine();e.preventDefault()}return}
+  if(e.key==='Escape'){if(overlayOpen){hideLists();hideRefine();hideScrape();e.preventDefault()}return}
   if(overlayOpen)return;
   if(!document.getElementById('screen-triage').classList.contains('active'))return;
   if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();_moveSel(1)}
@@ -1093,7 +1345,7 @@ function updateThreshold(v){
     if(c)for(const[jid,cnt]of Object.entries(c)){if(!scoredByJob[jid])candidateCounts[jid]=cnt}
     const ht=settings.hotThreshold;
     for(const[jid,list]of Object.entries(scoredByJob)){
-      candidateCounts[jid]={total:list.length,hot:list.filter(x=>adjustedScore(x)>=ht).length,warm:list.filter(x=>adjustedScore(x)>=POSSIBLE&&adjustedScore(x)<ht).length};
+      candidateCounts[jid]={total:list.length,hot:list.filter(x=>adjustedScore(x,jid)>=ht).length,warm:list.filter(x=>adjustedScore(x,jid)>=POSSIBLE&&adjustedScore(x,jid)<ht).length};
     }
   },400);
 }
