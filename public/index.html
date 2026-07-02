@@ -353,6 +353,11 @@ body{min-height:100vh}
         <button class="btn-add" onclick="addPrefCompany()">Add</button>
       </div>
     </div>
+    <div class="settings-section">
+      <div class="settings-section-title">US Sourcing Layer 🇺🇸</div>
+      <div style="font-size:13px;color:var(--text-3);margin-bottom:12px">Lookalike companies per US hiring city. Enabled cities add their companies to the scoring bonuses (Tier 1 = +15 pts · Tier 2 = +10 pts) on top of Preferred Companies.</div>
+      <div id="us-layer-list"></div>
+    </div>
   </div>
 </div>
 
@@ -516,9 +521,10 @@ function rowToConnection(row,fmt){
 // ═══════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════
-const DEFAULT_SETTINGS={hotThreshold:65,filterCFO:true,filterInterim:true,filterExpertComptable:true};
+const DEFAULT_SETTINGS={hotThreshold:65,filterCFO:true,filterInterim:true,filterExpertComptable:true,usCities:[]};
 let jobs=[],settings={},decisions={},blockedTerms=[],sharedBlockedTerms=[],hiddenPatterns=[],refineState={};
 let preferredCompanies=[],prefMap=new Map();
+let usCityList=[],usCompanies=[];
 let liveJobs=[],customJobs=[],allJobs=[];
 let candidateCounts={};
 let scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all';
@@ -538,7 +544,7 @@ function rebuildAllJobs(){
 
 function apiFetch(url,def){return fetch(url).then(r=>{if(r.status===401){location.href='/';return def}return r.json()}).catch(()=>def)}
 async function loadState(){
-  const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts,prefData]=await Promise.all([
+  const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts,prefData,usCitiesData]=await Promise.all([
     apiFetch('/api/decisions',{}),
     apiFetch('/api/blocks',{}),
     apiFetch('/api/refine',{}),
@@ -548,6 +554,7 @@ async function loadState(){
     apiFetch('/api/jobs/live',[]),
     apiFetch('/api/candidates/counts',{}),
     apiFetch('/api/preferred-companies',[]),
+    apiFetch('/api/us-companies/cities',[]),
   ]);
   decisions=dec;
   blockedTerms=blk.terms||[];
@@ -560,7 +567,8 @@ async function loadState(){
   liveJobs=Array.isArray(liveJobsData)?liveJobsData:[];
   candidateCounts=counts||{};
   preferredCompanies=Array.isArray(prefData)?prefData:[];
-  prefMap=new Map(preferredCompanies.map(c=>[c.name.toLowerCase().trim(),c]));
+  usCityList=Array.isArray(usCitiesData)?usCitiesData:[];
+  await loadUSCompanies();
   rebuildAllJobs();
   const el=document.getElementById('user-display');
   if(el)el.textContent=me.name||me.id||'';
@@ -579,6 +587,23 @@ function saveBlk(){
 function saveHPat(){saveBlk()}
 function saveRqs(){fetch('/api/refine',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(refineState)})}
 function saveSettings(){return fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}).catch(()=>{})}
+
+// US sourcing layer: enabled cities' lookalikes join prefMap for scoring.
+// Preferred companies win ties; a US entry only overrides a weaker tier.
+function rebuildPrefMap(){
+  prefMap=new Map(preferredCompanies.map(c=>[c.name.toLowerCase().trim(),c]));
+  for(const c of usCompanies){
+    const k=c.name.toLowerCase().trim();
+    const ex=prefMap.get(k);
+    if(!ex||c.tier<ex.tier)prefMap.set(k,{name:c.name,tier:c.tier,category:c.category});
+  }
+}
+async function loadUSCompanies(){
+  const sel=settings.usCities||[];
+  usCompanies=sel.length?await apiFetch('/api/us-companies?cities='+encodeURIComponent(sel.join(',')),[]):[];
+  if(!Array.isArray(usCompanies))usCompanies=[];
+  rebuildPrefMap();
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // SCORING PIPELINE
@@ -639,25 +664,29 @@ async function classifyAll(conns){
   const titles=[...new Set(conns.map(c=>c.title).filter(Boolean))];
   const comps=[...new Set(conns.map(c=>c.company).filter(Boolean))];
   const outT={},outC={};
-  let firstHits=null,degraded=false,guard=0,lastPend=Infinity;
+  let firstHits=null,lastErr=null,guard=0,lastPend=Infinity;
   let pendT=titles,pendC=comps;
   while((pendT.length||pendC.length)&&guard++<60){
     const done=(titles.length+comps.length)-(pendT.length+pendC.length);
     showProgress(`Classifying titles & companies… ${done}/${titles.length+comps.length} (new ones are learned once, then cached forever)`);
     let res;
     try{res=await fetch('/api/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({titles:pendT.slice(0,400),companies:pendC.slice(0,400)})})}catch{break}
-    if(res.status===503){degraded=true;break}
     if(!res.ok)break;
     const d=await res.json().catch(()=>null);
     if(!d)break;
+    lastErr=d.llmError||null;
     Object.assign(outT,d.titles||{});Object.assign(outC,d.companies||{});
     if(firstHits===null)firstHits=Object.keys(d.titles||{}).length+Object.keys(d.companies||{}).length;
     pendT=titles.filter(t=>!(t in outT));pendC=comps.filter(c=>!(c in outC));
     const pend=pendT.length+pendC.length;
-    if(pend>=lastPend){if(d.llmError)showToast('Classification partly failed — keyword scoring for the rest');break}
+    if(pend>=lastPend){
+      if(lastErr&&!/ANTHROPIC_API_KEY/.test(lastErr))showToast('Classification partly failed — keyword scoring for the rest');
+      break;
+    }
     lastPend=pend;
   }
   const resolved=Object.keys(outT).length+Object.keys(outC).length;
+  const degraded=resolved===0&&!!lastErr&&/ANTHROPIC_API_KEY/.test(lastErr);
   return{titles:outT,companies:outC,degraded,stats:{cached:firstHits||0,fresh:Math.max(0,resolved-(firstHits||0))}};
 }
 // Facet-based scoring — used instead of keyword scoreMatch when facets exist.
@@ -1351,7 +1380,7 @@ function hideLists(){document.getElementById('overlay-lists').classList.add('hid
 // ═══════════════════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════════════════
-function renderSettings(){document.getElementById('thresh-slider').value=settings.hotThreshold;document.getElementById('thresh-val').textContent=settings.hotThreshold;document.getElementById('tog-cfo').checked=settings.filterCFO;document.getElementById('tog-interim').checked=settings.filterInterim;document.getElementById('tog-ec').checked=settings.filterExpertComptable;renderJobsList();renderPrefList()}
+function renderSettings(){document.getElementById('thresh-slider').value=settings.hotThreshold;document.getElementById('thresh-val').textContent=settings.hotThreshold;document.getElementById('tog-cfo').checked=settings.filterCFO;document.getElementById('tog-interim').checked=settings.filterInterim;document.getElementById('tog-ec').checked=settings.filterExpertComptable;renderJobsList();renderPrefList();renderUSLayer()}
 function renderJobsList(){document.getElementById('jobs-list').innerHTML=jobs.map(j=>`<div class="job-item"><span class="job-item-title">${esc(j.title)}</span><button class="btn-del" onclick="removeJob('${esc(j.id)}')" title="Remove">×</button></div>`).join('')}
 let _thTimer;
 function updateThreshold(v){
@@ -1386,6 +1415,24 @@ async function clearCandidates(){
   showToast('Candidates cleared');
 }
 
+function renderUSLayer(){
+  const el=document.getElementById('us-layer-list');if(!el)return;
+  if(!usCityList.length){el.innerHTML=`<div class="lists-empty">No US lookalike data loaded yet</div>`;return}
+  const sel=new Set(settings.usCities||[]);
+  el.innerHTML=usCityList.map(c=>`<div class="settings-row">
+    <div><div class="settings-label">${esc(c.city)}</div><div class="settings-desc">${c.total} companies · ${c.tier1||0} tier 1</div></div>
+    <label class="toggle"><input type="checkbox" ${sel.has(c.city)?'checked':''} onchange="toggleUSCity('${esc(c.city).replace(/'/g,"\\'")}',this.checked)"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
+  </div>`).join('');
+}
+async function toggleUSCity(city,on){
+  const sel=new Set(settings.usCities||[]);
+  if(on)sel.add(city);else sel.delete(city);
+  settings.usCities=[...sel];
+  saveSettings();
+  await loadUSCompanies();
+  renderList();renderPicker();
+  showToast(on?`US layer on: ${city} (+${usCompanies.filter(c=>c.city===city).length} companies)`:`US layer off: ${city}`);
+}
 function renderPrefList(){
   const q=(document.getElementById('pref-search')||{}).value||'';
   const filtered=q?preferredCompanies.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())):preferredCompanies;

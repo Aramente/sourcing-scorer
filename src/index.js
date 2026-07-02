@@ -27,6 +27,113 @@ const isCfoTitle = t => _CFO_TITLE_RE.test(t) && !_ACCOUNTING_CTX_RE.test(t);
 const isInterim = t => _INTERIM_RE.test(t);
 const isExpertComptable = t => _EXPERT_CPT_RE.test(t) && !_INHOUSE_RE.test(t);
 
+// ── knowledge base: normalization + LLM classification ────────────
+// Facet taxonomy shared with the client (fam keys mirror ROLE_FAMILIES).
+const KB_FAMILIES = ['bdr_sdr','ae_exec','channel','csm','acct_mgmt','solutions','security_research','security_ops','security_eng','ai_ml','data_eng','devops','qa_test','it_ops','software','product','design','growth_mkt','content_mkt','field_mkt','brand_comms','sales_ops','fp_a','accounting','finance','legal','people_hr','other'];
+const KB_SENIORITIES = ['junior','mid','senior','lead','exec'];
+const KB_SETTINGS = ['in_house','cabinet','freelance','interim','unknown'];
+const KB_FLAGS = ['own_practice','student','seeking'];
+const KB_COMPANY_KINDS = ['company','accounting_firm','consulting_esn','agency','recruitment','freelance_self','education','public_sector','unknown'];
+const KB_MODEL = 'claude-opus-4-8';
+const KB_ITEMS_PER_CALL = 60;   // titles/companies per Claude request
+const KB_MAX_LLM_CALLS = 8;     // per Worker invocation; the client loops until pending=0
+
+function kbNormTitle(raw){
+  let n = String(raw||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu,' ')
+    .replace(/\b[hfmwx]\s*\/\s*[hfmwx](\s*\/\s*[hfmwxd])?\b/g,' ')  // h/f, f/h/x, m/w/d…
+    .replace(/\b(cdi|cdd)\b/g,' ');
+  if(n.includes('|')) n = n.split('|')[0];
+  n = n.replace(/[(){}\[\]«»"“”'’#*_,;:!?]/g,' ').replace(/\s*[–—/]\s*/g,' ').replace(/\s+-\s+/g,' ').replace(/\s+/g,' ').trim();
+  return n;
+}
+function kbNormCompany(raw){
+  return String(raw||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{27BF}\u{FE0F}]/gu,' ')
+    .replace(/[(){}\[\]«»"“”'’#*_,;:!?.]/g,' ')
+    .replace(/\b(sasu|sas|sarl|eurl|spa|gmbh|ltd|llc|inc|plc|bv|ag|srl|sa)\b/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+
+const KB_TITLE_PROMPT = `You classify LinkedIn job titles for a tech-recruiting tool (GitGuardian, a Paris code-security company). Titles are mostly French or English. For each input title return:
+- fam: the role family. Hints for ambiguous cases: accounting = comptabilité, audit interne/externe, tax, treasury, consolidation, commissariat aux comptes; fp_a = contrôle de gestion, FP&A, financial/business controller; finance = CFO, DAF, RAF, direction financière (leadership over the whole finance function); ae_exec = quota-carrying sales, sales leadership, general management; bdr_sdr = outbound prospecting; sales_ops = revenue/sales operations & enablement; security_eng = security engineering, appsec, cloud security, CISO; security_ops = SOC/IAM/GRC analysts; security_research = vulnerability/malware/threat research; software = software development & engineering management; it_ops = internal IT, sysadmin, helpdesk; people_hr = HR & recruiting; other = nothing in the enum fits.
+- seniority: junior (intern, apprentice, alternant, stagiaire, <2y) | mid (default) | senior (senior, confirmé, expert) | lead (manager, responsable, chef, team lead, principal, staff) | exec (director, directeur/directrice, VP, head of, C-level, partner, founder).
+- setting: in_house (employee doing this function inside one company) | cabinet (works at a client-serving professional firm: cabinet d'expertise comptable, audit — EY, KPMG, Deloitte, PwC, Mazars… — law firm, client-mission consulting; "collaborateur comptable" and "expert-comptable" in a cabinet belong here) | freelance (independent, self-employed, en portage, consultant indépendant) | interim (interim/transition management, intérimaire) | unknown (cannot tell from the title).
+- flags: subset of [own_practice (owns/founded their firm — fondateur/associé of a small cabinet, expert-comptable with their own office), student, seeking (open to work, en recherche)]. Empty if none.
+Judge from the title text alone. When a title mixes several roles, pick the dominant one. The i field must echo the input index.`;
+
+const KB_COMPANY_PROMPT = `You classify employer names from LinkedIn profiles for a Paris tech-recruiting tool. Many are French. For each name return kind:
+- accounting_firm: cabinet d'expertise comptable / audit / commissariat aux comptes (names with "expertise", "audit", "& associés" in an accounting context; EY, KPMG, Deloitte, PwC, Mazars, Grant Thornton, BDO, In Extenso, Fiducial…)
+- consulting_esn: consulting firms and ESN / IT services (Capgemini, Accenture, Sopra Steria…)
+- agency: marketing / creative / communication agencies
+- recruitment: recruiting, staffing or interim agencies (Michael Page, Hays, Fed Finance, Adecco…)
+- freelance_self: the "company" is the person themself (freelance, indépendant, auto-entrepreneur, EI, portage, or just a person's name styled as a business)
+- education: schools and universities
+- public_sector: government, public administration
+- company: an ordinary operating company (startup, scale-up, corporate, SME)
+- unknown: too ambiguous to tell.
+Judge from the name alone; prefer company or unknown over guessing an exotic kind. The i field must echo the input index.`;
+
+async function kbClassifyLLM(env, kind, items){
+  const isTitle = kind==='title';
+  const itemSchema = isTitle ? {
+    type:'object',
+    properties:{i:{type:'integer'},fam:{type:'string',enum:KB_FAMILIES},seniority:{type:'string',enum:KB_SENIORITIES},setting:{type:'string',enum:KB_SETTINGS},flags:{type:'array',items:{type:'string',enum:KB_FLAGS}}},
+    required:['i','fam','seniority','setting','flags'],additionalProperties:false,
+  } : {
+    type:'object',
+    properties:{i:{type:'integer'},kind:{type:'string',enum:KB_COMPANY_KINDS}},
+    required:['i','kind'],additionalProperties:false,
+  };
+  const body = JSON.stringify({
+    model: KB_MODEL,
+    max_tokens: 8000,
+    system: isTitle ? KB_TITLE_PROMPT : KB_COMPANY_PROMPT,
+    messages: [{role:'user',content:JSON.stringify(items.map((t,i)=>({i,[isTitle?'title':'company']:t})))}],
+    output_config: {format:{type:'json_schema',schema:{
+      type:'object',properties:{results:{type:'array',items:itemSchema}},required:['results'],additionalProperties:false,
+    }}},
+  });
+  let lastErr;
+  for (let attempt=0; attempt<2; attempt++){
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{'x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
+        body,
+      });
+      if (!res.ok){
+        const detail = (await res.text().catch(()=>'')).slice(0,300);
+        lastErr = new Error(`Anthropic ${res.status}: ${detail}`);
+        if (res.status>=500 || res.status===429) continue;  // retryable
+        throw lastErr;
+      }
+      const msg = await res.json();
+      if (msg.stop_reason==='refusal') return {results:[]};
+      const text = (msg.content||[]).find(b=>b.type==='text')?.text||'';
+      return JSON.parse(text);
+    } catch(e){ lastErr=e; }
+  }
+  throw lastErr;
+}
+
+async function kbLookup(env, table, col, norms){
+  const map = new Map();
+  for (let i=0;i<norms.length;i+=80){
+    const chunk = norms.slice(i,i+80);
+    const rows = await env.DB.prepare(`SELECT * FROM ${table} WHERE ${col} IN (${chunk.map(()=>'?').join(',')})`).bind(...chunk).all();
+    for (const r of rows.results){
+      if (table==='title_facets'){
+        let flags=[]; try{flags=JSON.parse(r.flags||'[]')}catch{}
+        map.set(r.title_norm,{fam:r.fam,seniority:r.seniority,setting:r.setting,flags,source:r.source});
+      } else map.set(r.company_norm,{kind:r.kind,source:r.source});
+    }
+  }
+  return map;
+}
+
 // ── session ───────────────────────────────────────────────────────
 function getToken(request) {
   const m = (request.headers.get('Cookie')||'').match(new RegExp(`(?:^|; )${SESSION_NAME}=([^;]+)`));
@@ -145,13 +252,14 @@ async function handleAPI(request, url, session, env) {
   if (path==='/api/settings') {
     if (method==='GET') {
       const row = await env.DB.prepare('SELECT * FROM user_settings WHERE user_id=?').bind(uid).first();
-      return ok(row ? {hotThreshold:row.hot_threshold, filterCFO:!!row.filter_cfo, filterInterim:!!row.filter_interim, filterExpertComptable:!!row.filter_expert_comptable}
-                    : {hotThreshold:65, filterCFO:true, filterInterim:true, filterExpertComptable:true});
+      let usCities = []; try { usCities = JSON.parse(row?.us_cities || '[]'); } catch {}
+      return ok(row ? {hotThreshold:row.hot_threshold, filterCFO:!!row.filter_cfo, filterInterim:!!row.filter_interim, filterExpertComptable:!!row.filter_expert_comptable, usCities}
+                    : {hotThreshold:65, filterCFO:true, filterInterim:true, filterExpertComptable:true, usCities:[]});
     }
     if (method==='PUT') {
       const s = await request.json();
-      await env.DB.prepare('INSERT OR REPLACE INTO user_settings (user_id,hot_threshold,filter_cfo,filter_interim,filter_expert_comptable) VALUES(?,?,?,?,?)')
-        .bind(uid, s.hotThreshold??65, s.filterCFO?1:0, s.filterInterim?1:0, s.filterExpertComptable?1:0).run();
+      await env.DB.prepare('INSERT OR REPLACE INTO user_settings (user_id,hot_threshold,filter_cfo,filter_interim,filter_expert_comptable,us_cities) VALUES(?,?,?,?,?,?)')
+        .bind(uid, s.hotThreshold??65, s.filterCFO?1:0, s.filterInterim?1:0, s.filterExpertComptable?1:0, JSON.stringify(Array.isArray(s.usCities)?s.usCities:[])).run();
       return ok({ok:true});
     }
   }
@@ -180,6 +288,108 @@ async function handleAPI(request, url, session, env) {
     const counts = {};
     rows.results.forEach(r => { counts[r.job_id] = {total:r.total, hot:r.hot||0, warm:r.warm||0}; });
     return ok(counts);
+  }
+
+  // ── knowledge base ──
+  // Cache-first classification: unique raw titles/companies in, facets out.
+  // Only cache misses go to Claude (up to KB_MAX_LLM_CALLS batches per call);
+  // the client re-calls while `pending` > 0.
+  if (path==='/api/classify' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const titles = (Array.isArray(body.titles)?body.titles:[]).filter(t=>typeof t==='string').slice(0,400);
+    const companies = (Array.isArray(body.companies)?body.companies:[]).filter(t=>typeof t==='string').slice(0,400);
+    const tNorm = new Map(); titles.forEach(t=>{const n=kbNormTitle(t); if(n)tNorm.set(t,n)});
+    const cNorm = new Map(); companies.forEach(c=>{const n=kbNormCompany(c); if(n)cNorm.set(c,n)});
+
+    const tRows = await kbLookup(env,'title_facets','title_norm',[...new Set(tNorm.values())]);
+    const cRows = await kbLookup(env,'company_facts','company_norm',[...new Set(cNorm.values())]);
+    const stats = {titleCached:tRows.size, companyCached:cRows.size, llmCalls:0};
+
+    const tMiss = [...new Set([...tNorm.values()].filter(n=>!tRows.has(n)))];
+    const cMiss = [...new Set([...cNorm.values()].filter(n=>!cRows.has(n)))];
+    const batches = [];
+    // No key → cache hits still work; misses just never resolve (client falls
+    // back to keyword scoring for them).
+    let budget = env.ANTHROPIC_API_KEY ? KB_MAX_LLM_CALLS : 0;
+    for (let i=0;i<tMiss.length&&budget>0;i+=KB_ITEMS_PER_CALL,budget--) batches.push({kind:'title',items:tMiss.slice(i,i+KB_ITEMS_PER_CALL)});
+    for (let i=0;i<cMiss.length&&budget>0;i+=KB_ITEMS_PER_CALL,budget--) batches.push({kind:'company',items:cMiss.slice(i,i+KB_ITEMS_PER_CALL)});
+
+    let llmError = env.ANTHROPIC_API_KEY ? null : 'ANTHROPIC_API_KEY not set';
+    const now = Date.now();
+    const settled = await Promise.allSettled(batches.map(b=>kbClassifyLLM(env,b.kind,b.items)));
+    const inserts = [];
+    settled.forEach((r,bi)=>{
+      const b = batches[bi];
+      if (r.status==='rejected'){ llmError = String(r.reason?.message||r.reason).slice(0,300); return; }
+      stats.llmCalls++;
+      for (const it of (r.value.results||[])){
+        const norm = b.items[it.i];
+        if (norm===undefined) continue;
+        if (b.kind==='title'){
+          tRows.set(norm,{fam:it.fam,seniority:it.seniority,setting:it.setting,flags:it.flags||[],source:'llm'});
+          inserts.push(env.DB.prepare('INSERT OR IGNORE INTO title_facets (title_norm,fam,seniority,setting,flags,source,updated_at) VALUES(?,?,?,?,?,?,?)')
+            .bind(norm,it.fam,it.seniority,it.setting,JSON.stringify(it.flags||[]),'llm',now));
+        } else {
+          cRows.set(norm,{kind:it.kind,source:'llm'});
+          inserts.push(env.DB.prepare('INSERT OR IGNORE INTO company_facts (company_norm,kind,source,updated_at) VALUES(?,?,?,?)')
+            .bind(norm,it.kind,'llm',now));
+        }
+      }
+    });
+    for (let i=0;i<inserts.length;i+=80) await env.DB.batch(inserts.slice(i,i+80));
+
+    const outT = {}, outC = {};
+    for (const [raw,n] of tNorm){ const f=tRows.get(n); if(f) outT[raw]=f; }
+    for (const [raw,n] of cNorm){ const f=cRows.get(n); if(f) outC[raw]=f; }
+    const pending = [...tNorm.values()].filter(n=>!tRows.has(n)).length
+                  + [...cNorm.values()].filter(n=>!cRows.has(n)).length;
+    return ok({titles:outT, companies:outC, pending, llmError, stats});
+  }
+
+  // learned keep/exclude counters per job family (shared team-wide)
+  if (path==='/api/weights' && method==='GET') {
+    const family = (url.searchParams.get('family')||'other').slice(0,40);
+    const rows = await env.DB.prepare('SELECT facet_key,keeps,excludes FROM facet_weights WHERE family_id=?').bind(family).all();
+    const out = {};
+    rows.results.forEach(r=>{ out[r.facet_key]={k:r.keeps,x:r.excludes}; });
+    return ok(out);
+  }
+
+  // a triage decision (or its undo) updates the family's facet counters
+  if (path==='/api/learn' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const family = (typeof body.family==='string' ? body.family.trim().slice(0,40) : '');
+    const f = body.facets;
+    if (!family || !f || typeof f!=='object') return err(400,'Missing family/facets');
+    const dk = (body.next==='kept'?1:0) - (body.prev==='kept'?1:0);
+    const dx = (body.next==='excl'?1:0) - (body.prev==='excl'?1:0);
+    if (!dk && !dx) return ok({ok:true});
+    const keys = [];
+    if (KB_FAMILIES.includes(f.fam)) keys.push('fam='+f.fam);
+    if (KB_SENIORITIES.includes(f.seniority)) keys.push('seniority='+f.seniority);
+    if (KB_SETTINGS.includes(f.setting)) keys.push('setting='+f.setting);
+    if (!keys.length) return ok({ok:true});
+    await env.DB.batch(keys.map(key=>env.DB.prepare(
+      `INSERT INTO facet_weights (family_id,facet_key,keeps,excludes) VALUES(?,?,?,?)
+       ON CONFLICT(family_id,facet_key) DO UPDATE SET keeps=MAX(0,keeps+?), excludes=MAX(0,excludes+?)`
+    ).bind(family,key,Math.max(0,dk),Math.max(0,dx),dk,dx)));
+    return ok({ok:true});
+  }
+
+  // manual facet correction — strongest learning signal, never overwritten by the LLM
+  if (path==='/api/facets/title' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const norm = kbNormTitle(body.title||'');
+    const f = body.facets||{};
+    if (!norm) return err(400,'Missing title');
+    if (!KB_FAMILIES.includes(f.fam) || !KB_SENIORITIES.includes(f.seniority) || !KB_SETTINGS.includes(f.setting)) return err(400,'Invalid facets');
+    const flags = JSON.stringify(Array.isArray(f.flags)?f.flags.filter(x=>KB_FLAGS.includes(x)):[]);
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO title_facets (title_norm,fam,seniority,setting,flags,source,updated_at) VALUES(?,?,?,?,?,'manual',?)
+       ON CONFLICT(title_norm) DO UPDATE SET fam=?,seniority=?,setting=?,flags=?,source='manual',updated_at=?`
+    ).bind(norm,f.fam,f.seniority,f.setting,flags,now,f.fam,f.seniority,f.setting,flags,now).run();
+    return ok({ok:true});
   }
 
   // jobs
@@ -255,8 +465,8 @@ async function handleAPI(request, url, session, env) {
         // Mirrors the frontend's ckey(): nameless (anonymized) leads fall back to their URL
         const dedup = `${c.name||c.linkedin_url||c.url||''}|${c.company||''}`;
         return env.DB.prepare(
-          'INSERT OR IGNORE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name,import_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)'
-        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[]), importName, importDate);
+          'INSERT OR IGNORE INTO candidates (user_id,job_id,dedup_key,name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name,import_date,facets) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        ).bind(uid, jobId, dedup, c.name||'', c.first_name||'', c.last_name||'', c.company||'', c.title||'', c.linkedin_url||c.url||'', c.score||0, JSON.stringify(c.reasons||[]), importName, importDate, c.facets?JSON.stringify(c.facets):'');
       });
       const results = await env.DB.batch(stmts);
       const count = results.reduce((s, r) => s + (r.meta?.changes || 0), 0);
@@ -265,19 +475,23 @@ async function handleAPI(request, url, session, env) {
 
     if (method === 'GET') {
       const rows = await env.DB.prepare(
-        'SELECT name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
+        'SELECT name,first_name,last_name,company,title,linkedin_url,score,reasons,import_name,facets FROM candidates WHERE user_id=? AND job_id=? ORDER BY score DESC'
       ).bind(uid, jobId).all();
-      return ok(rows.results.map(r => ({
-        name: r.name,
-        firstName: r.first_name,
-        lastName: r.last_name,
-        company: r.company,
-        title: r.title,
-        url: r.linkedin_url,
-        score: r.score,
-        reasons: JSON.parse(r.reasons || '[]'),
-        importName: r.import_name || '',
-      })));
+      return ok(rows.results.map(r => {
+        let facets = null; try { facets = r.facets ? JSON.parse(r.facets) : null; } catch {}
+        return {
+          name: r.name,
+          firstName: r.first_name,
+          lastName: r.last_name,
+          company: r.company,
+          title: r.title,
+          url: r.linkedin_url,
+          score: r.score,
+          reasons: JSON.parse(r.reasons || '[]'),
+          importName: r.import_name || '',
+          facets,
+        };
+      }));
     }
 
     if (method === 'DELETE') {
@@ -407,6 +621,19 @@ async function handleAPI(request, url, session, env) {
       return ok({ok:true});
     }
   }
+  // US sourcing layer — shared lookalike companies keyed by (city, name)
+  if (path==='/api/us-companies/cities' && method==='GET') {
+    const rows = await env.DB.prepare('SELECT city, COUNT(*) AS total, SUM(CASE WHEN tier=1 THEN 1 ELSE 0 END) AS tier1 FROM us_lookalike_companies GROUP BY city ORDER BY city').all();
+    return ok(rows.results);
+  }
+  if (path==='/api/us-companies' && method==='GET') {
+    const cities = (url.searchParams.get('cities')||'').split(',').map(s=>s.trim()).filter(Boolean).slice(0,20);
+    if (!cities.length) return ok([]);
+    const qs = cities.map(()=>'?').join(',');
+    const rows = await env.DB.prepare(`SELECT city,name,tier,category FROM us_lookalike_companies WHERE city IN (${qs}) ORDER BY tier,name`).bind(...cities).all();
+    return ok(rows.results);
+  }
+
   const prefDel = path.match(/^\/api\/preferred-companies\/(.+)$/);
   if (prefDel && method==='DELETE') {
     const name = decodeURIComponent(prefDel[1]);
