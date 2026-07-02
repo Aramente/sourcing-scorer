@@ -35,7 +35,9 @@ const KB_SETTINGS = ['in_house','cabinet','freelance','interim','unknown'];
 const KB_FLAGS = ['own_practice','student','seeking'];
 const KB_COMPANY_KINDS = ['company','accounting_firm','consulting_esn','agency','recruitment','freelance_self','education','public_sector','unknown'];
 const KB_MODEL = 'claude-opus-4-8';
+const KB_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';  // Workers AI fallback when no Anthropic key
 const KB_ITEMS_PER_CALL = 60;   // titles/companies per Claude request
+const KB_ITEMS_PER_CALL_AI = 40; // smaller batches for llama
 const KB_MAX_LLM_CALLS = 8;     // per Worker invocation; the client loops until pending=0
 
 function kbNormTitle(raw){
@@ -76,6 +78,39 @@ const KB_COMPANY_PROMPT = `You classify employer names from LinkedIn profiles fo
 - unknown: too ambiguous to tell.
 Judge from the name alone; prefer company or unknown over guessing an exotic kind. The i field must echo the input index.`;
 
+// Workers AI fallback: same prompts/schema as the Anthropic path, but llama
+// respects schemas less reliably, so every item is validated against the enums
+// and invalid ones are dropped (they stay "pending" and get retried).
+async function kbClassifyWorkersAI(env, kind, items, itemSchema){
+  const isTitle = kind==='title';
+  const resp = await env.AI.run(KB_AI_MODEL, {
+    messages: [
+      {role:'system', content: isTitle ? KB_TITLE_PROMPT : KB_COMPANY_PROMPT},
+      {role:'user', content: JSON.stringify(items.map((t,i)=>({i,[isTitle?'title':'company']:t})))},
+    ],
+    max_tokens: 6000,
+    response_format: {type:'json_schema', json_schema:{
+      type:'object',properties:{results:{type:'array',items:itemSchema}},required:['results'],
+    }},
+  });
+  let out = resp && resp.response;
+  if (typeof out === 'string'){ try { out = JSON.parse(out); } catch { return {results:[]}; } }
+  const raw = Array.isArray(out && out.results) ? out.results : [];
+  const results = [];
+  for (const it of raw){
+    if (!it || !Number.isInteger(it.i)) continue;
+    if (isTitle){
+      if (!KB_FAMILIES.includes(it.fam) || !KB_SENIORITIES.includes(it.seniority) || !KB_SETTINGS.includes(it.setting)) continue;
+      const flags = Array.isArray(it.flags) ? it.flags.filter(f=>KB_FLAGS.includes(f)) : [];
+      results.push({i:it.i,fam:it.fam,seniority:it.seniority,setting:it.setting,flags});
+    } else {
+      if (!KB_COMPANY_KINDS.includes(it.kind)) continue;
+      results.push({i:it.i,kind:it.kind});
+    }
+  }
+  return {results};
+}
+
 async function kbClassifyLLM(env, kind, items){
   const isTitle = kind==='title';
   const itemSchema = isTitle ? {
@@ -87,6 +122,7 @@ async function kbClassifyLLM(env, kind, items){
     properties:{i:{type:'integer'},kind:{type:'string',enum:KB_COMPANY_KINDS}},
     required:['i','kind'],additionalProperties:false,
   };
+  if (!env.ANTHROPIC_API_KEY && env.AI) return kbClassifyWorkersAI(env, kind, items, itemSchema);
   const body = JSON.stringify({
     model: KB_MODEL,
     max_tokens: 8000,
@@ -308,13 +344,15 @@ async function handleAPI(request, url, session, env) {
     const tMiss = [...new Set([...tNorm.values()].filter(n=>!tRows.has(n)))];
     const cMiss = [...new Set([...cNorm.values()].filter(n=>!cRows.has(n)))];
     const batches = [];
-    // No key → cache hits still work; misses just never resolve (client falls
-    // back to keyword scoring for them).
-    let budget = env.ANTHROPIC_API_KEY ? KB_MAX_LLM_CALLS : 0;
-    for (let i=0;i<tMiss.length&&budget>0;i+=KB_ITEMS_PER_CALL,budget--) batches.push({kind:'title',items:tMiss.slice(i,i+KB_ITEMS_PER_CALL)});
-    for (let i=0;i<cMiss.length&&budget>0;i+=KB_ITEMS_PER_CALL,budget--) batches.push({kind:'company',items:cMiss.slice(i,i+KB_ITEMS_PER_CALL)});
+    // No backend → cache hits still work; misses just never resolve (client
+    // falls back to keyword scoring for them).
+    const hasBackend = !!(env.ANTHROPIC_API_KEY || env.AI);
+    const perCall = env.ANTHROPIC_API_KEY ? KB_ITEMS_PER_CALL : KB_ITEMS_PER_CALL_AI;
+    let budget = hasBackend ? KB_MAX_LLM_CALLS : 0;
+    for (let i=0;i<tMiss.length&&budget>0;i+=perCall,budget--) batches.push({kind:'title',items:tMiss.slice(i,i+perCall)});
+    for (let i=0;i<cMiss.length&&budget>0;i+=perCall,budget--) batches.push({kind:'company',items:cMiss.slice(i,i+perCall)});
 
-    let llmError = env.ANTHROPIC_API_KEY ? null : 'ANTHROPIC_API_KEY not set';
+    let llmError = hasBackend ? null : 'No classifier backend (ANTHROPIC_API_KEY or AI binding)';
     const now = Date.now();
     const settled = await Promise.allSettled(batches.map(b=>kbClassifyLLM(env,b.kind,b.items)));
     const inserts = [];
@@ -634,6 +672,86 @@ async function handleAPI(request, url, session, env) {
     return ok(rows.results);
   }
 
+  // ── company DB (reframe: docs/specs/2026-07-02-company-db-reframe.md) ──
+  // POST /api/companies/search {filters:[{field,op?,value,mode:'must'|'ranked',rank}],limit,offset}
+  // must → WHERE; ranked → ORDER BY weighted match score (rank 0 = most important).
+  if (path==='/api/companies/search' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const filters = (Array.isArray(body.filters)?body.filters:[]).slice(0,20);
+    const limit = Math.min(parseInt(body.limit)||50, 200);
+    const offset = Math.max(parseInt(body.offset)||0, 0);
+    const where = [], wParams = [];
+    const ranked = [];
+    for (const f of filters){
+      const params = [];
+      const expr = companyFilterExpr(f, params);
+      if (!expr) continue;
+      if (f.mode==='ranked') ranked.push({expr, params, rank: parseInt(f.rank)||0});
+      else { where.push(expr); wParams.push(...params); }
+    }
+    ranked.sort((a,b)=>a.rank-b.rank);
+    const scoreParts = ranked.map((r,i)=>`(CASE WHEN ${r.expr} THEN ${ranked.length-i} ELSE 0 END)`);
+    const scoreExpr = scoreParts.length ? scoreParts.join('+') : '0';
+    const scoreParams = ranked.flatMap(r=>r.params);
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const total = await env.DB.prepare(`SELECT COUNT(*) AS n FROM companies ${whereSql}`).bind(...wParams).first();
+    const rows = await env.DB.prepare(
+      `SELECT id,name,domain,linkedin_url,hq_country,hq_city,region,industry,tech_stack,business_model,
+              employees_min,employees_max,revenue_bucket,revenue_source,founded_year,total_raised_usd,last_round,
+              (${scoreExpr}) AS match_score
+       FROM companies ${whereSql} ORDER BY match_score DESC, name LIMIT ? OFFSET ?`
+    ).bind(...scoreParams, ...wParams, limit, offset).all();
+    return ok({total: total.n, companies: rows.results});
+  }
+
+  // Export every match as a Sales Nav account-list CSV (LinkedIn company URLs).
+  if (path==='/api/companies/export' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const filters = (Array.isArray(body.filters)?body.filters:[]).slice(0,20);
+    const where = ["linkedin_url IS NOT NULL"], wParams = [];
+    for (const f of filters){
+      if (f.mode==='ranked') continue;
+      const params = [];
+      const expr = companyFilterExpr(f, params);
+      if (expr){ where.push(expr); wParams.push(...params); }
+    }
+    const rows = await env.DB.prepare(
+      `SELECT name, linkedin_url FROM companies WHERE ${where.join(' AND ')} ORDER BY name LIMIT 20000`
+    ).bind(...wParams).all();
+    const csv = 'Company Name,LinkedIn URL\n' + rows.results.map(r=>`"${r.name.replace(/"/g,'""')}",${r.linkedin_url}`).join('\n');
+    return new Response(csv, {headers:{'Content-Type':'text/csv','Content-Disposition':'attachment; filename="companies.csv"'}});
+  }
+
+  // Saved filter set per (job, user): GET/POST /api/company-filters?job=ID
+  if (path==='/api/company-filters') {
+    const jobId = (url.searchParams.get('job')||'').slice(0,80);
+    if (!jobId) return err(400,'Missing job');
+    if (method==='GET') {
+      const row = await env.DB.prepare('SELECT filters,company_ids,updated_at FROM job_company_filters WHERE job_id=? AND user_id=?').bind(jobId,uid).first();
+      if (!row) return ok(null);
+      let filters=[], companyIds=[]; try{filters=JSON.parse(row.filters)}catch{} try{companyIds=JSON.parse(row.company_ids)}catch{}
+      return ok({filters, companyIds, updatedAt: row.updated_at});
+    }
+    if (method==='POST') {
+      let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+      const filters = JSON.stringify((Array.isArray(body.filters)?body.filters:[]).slice(0,20));
+      const companyIds = JSON.stringify((Array.isArray(body.companyIds)?body.companyIds:[]).slice(0,20000));
+      await env.DB.prepare('INSERT OR REPLACE INTO job_company_filters (job_id,user_id,filters,company_ids,updated_at) VALUES(?,?,?,?,?)')
+        .bind(jobId,uid,filters,companyIds,Date.now()).run();
+      return ok({ok:true});
+    }
+  }
+
+  // Distinct values for filter dropdowns.
+  if (path==='/api/companies/facets' && method==='GET') {
+    const [countries, industries, models] = await Promise.all([
+      env.DB.prepare('SELECT hq_country AS v, COUNT(*) AS n FROM companies WHERE hq_country IS NOT NULL GROUP BY hq_country ORDER BY n DESC LIMIT 60').all(),
+      env.DB.prepare('SELECT industry AS v, COUNT(*) AS n FROM companies WHERE industry IS NOT NULL GROUP BY industry ORDER BY n DESC LIMIT 40').all(),
+      env.DB.prepare('SELECT business_model AS v, COUNT(*) AS n FROM companies WHERE business_model IS NOT NULL GROUP BY business_model ORDER BY n DESC LIMIT 20').all(),
+    ]);
+    return ok({countries:countries.results, industries:industries.results, businessModels:models.results});
+  }
+
   const prefDel = path.match(/^\/api\/preferred-companies\/(.+)$/);
   if (prefDel && method==='DELETE') {
     const name = decodeURIComponent(prefDel[1]);
@@ -647,6 +765,64 @@ async function handleAPI(request, url, session, env) {
   }
 
   return err(404,'Not found');
+}
+
+// ── company filter → SQL (fields whitelisted; values always bound) ─
+function companyFilterExpr(f, params){
+  if (!f || typeof f!=='object') return null;
+  const list = v => (Array.isArray(v)?v:[v]).map(x=>String(x).slice(0,80)).filter(Boolean).slice(0,30);
+  switch(f.field){
+    case 'region': {
+      const vals = list(f.value).filter(v=>['fr','eu','us'].includes(v));
+      if(!vals.length) return null;
+      params.push(...vals); return `region IN (${vals.map(()=>'?').join(',')})`;
+    }
+    case 'country': {
+      const vals = list(f.value); if(!vals.length) return null;
+      params.push(...vals.map(v=>v.toLowerCase())); return `LOWER(hq_country) IN (${vals.map(()=>'?').join(',')})`;
+    }
+    case 'industry': {
+      const vals = list(f.value); if(!vals.length) return null;
+      params.push(...vals.map(v=>v.toLowerCase())); return `LOWER(industry) IN (${vals.map(()=>'?').join(',')})`;
+    }
+    case 'business_model': {
+      const vals = list(f.value); if(!vals.length) return null;
+      params.push(...vals); return `business_model IN (${vals.map(()=>'?').join(',')})`;
+    }
+    case 'employees': {  // {min,max} — overlap with the company's range
+      const min = parseInt(f.value&&f.value.min), max = parseInt(f.value&&f.value.max);
+      const parts = [];
+      if (Number.isFinite(min)){ parts.push('employees_max>=?'); params.push(min); }
+      if (Number.isFinite(max)){ parts.push('employees_min<=?'); params.push(max); }
+      return parts.length ? `(${parts.join(' AND ')})` : null;
+    }
+    case 'founded_after': {
+      const y = parseInt(f.value); if(!Number.isFinite(y)) return null;
+      params.push(y); return 'founded_year>=?';
+    }
+    case 'raised': {  // {min,max} USD
+      const min = parseInt(f.value&&f.value.min), max = parseInt(f.value&&f.value.max);
+      const parts = [];
+      if (Number.isFinite(min)){ parts.push('total_raised_usd>=?'); params.push(min); }
+      if (Number.isFinite(max)){ parts.push('total_raised_usd<=?'); params.push(max); }
+      return parts.length ? `(${parts.join(' AND ')})` : null;
+    }
+    case 'revenue_bucket': {
+      const vals = list(f.value); if(!vals.length) return null;
+      params.push(...vals); return `revenue_bucket IN (${vals.map(()=>'?').join(',')})`;
+    }
+    case 'stack': {  // any-of match inside the JSON array text
+      const vals = list(f.value); if(!vals.length) return null;
+      const parts = vals.map(()=>'tech_stack LIKE ?');
+      params.push(...vals.map(v=>`%"${v.toLowerCase()}"%`));
+      return `(${parts.join(' OR ')})`;
+    }
+    case 'name': {
+      const v = String(f.value||'').slice(0,80); if(!v) return null;
+      params.push(`%${kbNormCompany(v)}%`); return 'name_norm LIKE ?';
+    }
+    default: return null;
+  }
 }
 
 // ── helpers ───────────────────────────────────────────────────────

@@ -12,6 +12,9 @@ binding = "DB"
 database_name = "sourcing-scorer"
 database_id = "e0a654e3-eef5-412d-826e-449618e3aeb3"
 
+[ai]
+binding = "AI"
+
 # Uncomment once sloow.app is added as a Cloudflare zone in your account:
 # [[routes]]
 # pattern = "sourcing-scorer.sloow.app"
