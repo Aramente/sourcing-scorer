@@ -75,6 +75,39 @@ Everything is re-runnable and idempotent; only stdlib Python is needed for
 Unmatched seed rows (mostly `us_lookalike` names with no PDL hit) are kept with
 an empty `linkedin_url` — a later gap-fill step handles them.
 
+## Enrichment steps (after loading backbone.csv into D1 via 09_upsert_d1.py)
+
+| Step | Script | Status |
+|---|---|---|
+| 04. LinkedIn gap-fill (Serper) | — | not built |
+| 05. SIREN matching | — | **skipped deliberately** (see below) |
+| 06. FR revenue (INPI comptes annuels) | — | **skipped deliberately** (see below) |
+| 07. Tech stack (GitHub org languages) | `07_tech_stack.js` | built, validated, run against full DB |
+| 08. Business model (Anthropic/Workers AI) | `08_business_model.js` | built, run against full DB (subject to Workers AI's 10k neurons/day free quota — rerun to pick up any still-`NULL` rows) |
+| 09. D1 upsert | `09_upsert_d1.py` | built — loads backbone.csv into the `companies` table |
+
+**05/06 skipped on purpose** (2026-07-06): INPI's `data.inpi.fr` comptes-annuels
+API is genuinely free (just an account signup, confirmed working — auth is
+`POST /api/sso/login` with the account email/password → Bearer token; revenue
+is liasse code `FJ`, page 3, column `m3`) and gives real filed chiffre
+d'affaires, no LLM guessing needed. But three compounding factors make it not
+worth building for this target company list: SIREN resolution would need
+conservative exact-name matching (real coverage maybe 60-70%), only companies
+with a *digitized* (not PDF-only) bilan count, and ~45% of French companies
+legally file under confidentiality — no CA public anywhere, free or paid.
+Combined, realistic yield was ~25-40% of the ~6,500 FR companies — and Kevin's
+own read is that the target company profile (funded scale-ups, or French subs
+of foreign parents) is exactly the profile most likely to file confidentially
+or have no meaningful standalone French P&L. If this changes, the technical
+path is fully documented above — pick it back up without re-researching INPI.
+
+`07_tech_stack.js` is deliberately conservative (org existing at a guessed
+slug is not enough — requires the org profile's `blog` domain or `name` field
+to corroborate) since a wrong GitHub org attached to the wrong company is
+worse than no data. Real-world match rate on the full ~17K-company run was
+~19% (see git log for the run's summary), concentrated in dev-tool/SaaS/infra
+companies; near-zero for consulting/staffing/agency-type rows.
+
 ## Known caveats
 
 - The Kaggle copy of the PDL dataset is **version 1 (2019 vintage)** — employee
