@@ -723,7 +723,7 @@ async function handleAPI(request, url, session, env) {
   if (path==='/api/companies/search' && method==='POST') {
     let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
     const filters = (Array.isArray(body.filters)?body.filters:[]).slice(0,20);
-    const limit = Math.min(parseInt(body.limit)||50, 200);
+    const limit = Math.min(parseInt(body.limit)||50, 5000);
     const offset = Math.max(parseInt(body.offset)||0, 0);
     const where = [], wParams = [];
     const ranked = [];

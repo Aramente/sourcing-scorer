@@ -258,7 +258,7 @@ body{min-height:100vh}
 <div id="screen-companies" class="screen">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
     <div style="display:flex;align-items:center;gap:14px">
-      <button class="btn-back" onclick="showScreen('imports');renderImports()">← Imports</button>
+      <button class="btn-back" onclick="showScreen('imports');renderImports();loadJobCompanyBoost(currentJobId)">← Imports</button>
       <div>
         <div style="font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:3px">Companies</div>
         <div id="companies-job-title" style="font-size:20px;font-weight:700;letter-spacing:-.01em"></div>
@@ -674,7 +674,43 @@ function dkey(jid,c){return jid+'::'+ckey(c)}
 function companyReputation(company){if(!company)return 0;const co=company.toLowerCase();let kept=0,skipped=0;for(const[k,v]of Object.entries(decisions)){if(v!=='kept'&&v!=='excl')continue;const sep=k.indexOf('::');if(sep===-1)continue;const cpart=k.slice(sep+2);const pipe=cpart.lastIndexOf('|');if(pipe===-1)continue;const dc=cpart.slice(pipe+1).toLowerCase();if(dc===co){if(v==='kept')kept++;else skipped++;}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
 function _wordIn(hay,needle,allowPrefix){let i=hay.indexOf(needle);while(i!==-1){const pre=i===0||!/[a-z0-9]/.test(hay[i-1]);const j=i+needle.length;const post=j===hay.length||!/[a-z0-9]/.test(hay[j]);if(pre&&(post||(allowPrefix&&needle.length>=6)))return true;i=hay.indexOf(needle,i+1)}return false}
 function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}let best=0;for(const[key,c]of prefMap){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){const b=c.tier===1?15:10;if(b>best)best=b}}return best}
-function adjustedScore(c,jid=currentJobId){return c.score+companyReputation(c.company)+companyPreferenceBonus(c.company)+learnedAdjustment(c,jid)}
+// Per-job company-filter boost (docs/specs/2026-07-02-company-db-reframe.md) —
+// takes over from the old global tier bonus once a job has filters saved;
+// falls back to companyPreferenceBonus so unconfigured jobs keep working unchanged.
+let jobCompanyBoost=new Map();
+let _jobCompanyBoostPromise=null;
+function loadJobCompanyBoost(jobId){
+  _jobCompanyBoostPromise=_loadJobCompanyBoost(jobId);
+  return _jobCompanyBoostPromise;
+}
+async function _loadJobCompanyBoost(jobId){
+  jobCompanyBoost=new Map();
+  if(!jobId)return;
+  const saved=await fetch(`/api/company-filters?job=${encodeURIComponent(jobId)}`).then(r=>r.ok?r.json():null).catch(()=>null);
+  const filters=(saved&&Array.isArray(saved.filters))?saved.filters:[];
+  if(!filters.length)return;
+  const res=await fetch('/api/companies/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters,limit:5000})}).then(r=>r.ok?r.json():null).catch(()=>null);
+  const rows=(res&&Array.isArray(res.companies))?res.companies:[];
+  const maxScore=Math.max(1,...rows.map(r=>r.match_score||0));
+  const map=new Map();
+  for(const r of rows){
+    const boost=r.match_score>0?Math.round(8+7*(r.match_score/maxScore)):8; // 8 = in-list flat bonus, up to 15 for top-ranked matches
+    map.set(r.name.toLowerCase().trim(),boost);
+  }
+  jobCompanyBoost=map;
+}
+function companyFilterOrPreferenceBonus(company){
+  if(!company)return 0;
+  if(jobCompanyBoost.size){
+    const n=company.toLowerCase().trim();
+    if(jobCompanyBoost.has(n))return jobCompanyBoost.get(n);
+    let best=0;
+    for(const[key,b]of jobCompanyBoost){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){if(b>best)best=b}}
+    return best;
+  }
+  return companyPreferenceBonus(company);
+}
+function adjustedScore(c,jid=currentJobId){return c.score+companyReputation(c.company)+companyFilterOrPreferenceBonus(c.company)+learnedAdjustment(c,jid)}
 
 // ═══════════════════════════════════════════════════════════════════
 // KNOWLEDGE BASE — LLM-taught facets + weights learned from decisions
@@ -884,7 +920,7 @@ async function importConnections(conns,importName,jobId,totalRows){
     const f=cls.titles[c.title]||null;
     const coKind=(cls.companies[c.company]||{}).kind||null;
     const m=f?scoreWithFacets(c,job,f,coKind):scoreMatch(c,job);
-    if(m.score+companyPreferenceBonus(c.company)<POSSIBLE){below++;continue}
+    if(m.score+companyFilterOrPreferenceBonus(c.company)<POSSIBLE){below++;continue}
     if(!passesFilters(c)){filtered++;continue}
     toSave.push({name:c.name,first_name:c.firstName||'',last_name:c.lastName||'',company:c.company||'',title:c.title,linkedin_url:c.url||'',dedup_key:ckey(c),score:m.score,reasons:m.reasons,
       facets:f?{fam:f.fam,seniority:f.seniority,setting:f.setting,flags:f.flags||[],co:coKind}:null});
@@ -1103,6 +1139,7 @@ function onEmptyJobInput(val){
 async function openJob(jobId){
   currentJobId=jobId;currentImportName=null;
   loadWeights(jobFamilyById(jobId));
+  loadJobCompanyBoost(jobId);
   const job=allJobs.find(j=>j.id===jobId);
   document.getElementById('imports-job-title').textContent=job?job.title:jobId;
   showScreen('imports');
@@ -1138,6 +1175,7 @@ async function openImport(importName){
   document.getElementById('triage-job-title').textContent=(job?job.title:currentJobId)+(importName?' — '+importName:'');
   showScreen('triage');
   initUpload();
+  if(_jobCompanyBoostPromise)await _jobCompanyBoostPromise;
   if(!scoredByJob[currentJobId]){
     const jid=currentJobId;
     document.getElementById('cand-list').innerHTML='<div style="text-align:center;padding:48px 0;color:var(--text-3)">Loading…</div>';
@@ -1243,7 +1281,7 @@ function renderList(){
     const kA=dec==='kept'?' active':'';const xA=dec==='excl'?' active':'';const vA=dec==='view'?' active':'';
     const liBtn=c.url?`<button class="btn-li" data-url="${esc(c.url)}" onclick="openLI(this.dataset.url)">LinkedIn ↗</button>`:'';
     const rep=companyReputation(c.company);
-    const pref=companyPreferenceBonus(c.company);
+    const pref=companyFilterOrPreferenceBonus(c.company);
     const learn=learnedAdjustment(c,currentJobId);
     const adjNote=(rep!==0||pref!==0||learn!==0)?` <span style="font-size:11px;color:var(--text-3)">(${rep!==0?(rep>0?'+':'')+rep:''}${pref>0?(rep!==0?' ':'')+'⭐+'+pref:''}${learn!==0?((rep!==0||pref>0)?' ':'')+'📈'+(learn>0?'+':'')+learn:''})</span>`:'';
     const blkBtn=c.company?` <button class="btn-block-co" data-co="${esc(c.company)}" onclick="blockCompany(this.dataset.co)" title="Block this company">🚫</button>`:'';
