@@ -155,6 +155,51 @@ async function kbClassifyLLM(env, kind, items){
   throw lastErr;
 }
 
+// ── company business-model classification (docs/specs/2026-07-02-company-db-reframe.md) ──
+// No dataset carries this field; the spec calls for an LLM batch pass. Stateless —
+// callers persist results themselves (see pipeline/08_business_model.py).
+const CB_MODELS = ['b2b_saas','b2c','marketplace','services','other'];
+const CB_PROMPT = `You classify companies' business model for a recruiting/sourcing tool. For each company (name + industry given) return business_model:
+- b2b_saas: sells software/subscriptions to other businesses (most cybersecurity, devtools, enterprise software, fintech infrastructure vendors).
+- b2c: sells products or subscriptions directly to consumers.
+- marketplace: two-sided platform connecting buyers and sellers/providers.
+- services: consulting, agencies, staffing, IT services, professional services firms (revenue is billed work, not a product).
+- other: hardware manufacturers, public sector, education, or anything that doesn't fit above.
+Judge from the name and industry alone; when uncertain between b2b_saas and other software categories, prefer b2b_saas for software/tech companies. The i field must echo the input index.`;
+async function classifyBusinessModel(env, items){
+  const schema = {type:'object',properties:{i:{type:'integer'},business_model:{type:'string',enum:CB_MODELS}},required:['i','business_model'],additionalProperties:false};
+  const body = {
+    system: CB_PROMPT,
+    userContent: JSON.stringify(items.map((c,i)=>({i,name:c.name,industry:c.industry||''}))),
+    schema,
+  };
+  if (env.ANTHROPIC_API_KEY){
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
+      body: JSON.stringify({
+        model: KB_MODEL, max_tokens: 6000, system: body.system,
+        messages: [{role:'user',content:body.userContent}],
+        output_config: {format:{type:'json_schema',schema:{type:'object',properties:{results:{type:'array',items:schema}},required:['results'],additionalProperties:false}}},
+      }),
+    });
+    if (!res.ok) throw new Error(`Anthropic ${res.status}`);
+    const msg = await res.json();
+    const text = (msg.content||[]).find(b=>b.type==='text')?.text||'{}';
+    return JSON.parse(text).results||[];
+  }
+  if (!env.AI) throw new Error('No classifier backend');
+  const resp = await env.AI.run(KB_AI_MODEL, {
+    messages: [{role:'system',content:body.system},{role:'user',content:body.userContent}],
+    max_tokens: 4000,
+    response_format: {type:'json_schema', json_schema:{type:'object',properties:{results:{type:'array',items:schema}},required:['results']}},
+  });
+  let out = resp && resp.response;
+  if (typeof out === 'string'){ try { out = JSON.parse(out); } catch { return []; } }
+  const raw = Array.isArray(out && out.results) ? out.results : [];
+  return raw.filter(it=>it && Number.isInteger(it.i) && CB_MODELS.includes(it.business_model));
+}
+
 async function kbLookup(env, table, col, norms){
   const map = new Map();
   for (let i=0;i<norms.length;i+=80){
@@ -739,6 +784,21 @@ async function handleAPI(request, url, session, env) {
       await env.DB.prepare('INSERT OR REPLACE INTO job_company_filters (job_id,user_id,filters,company_ids,updated_at) VALUES(?,?,?,?,?)')
         .bind(jobId,uid,filters,companyIds,Date.now()).run();
       return ok({ok:true});
+    }
+  }
+
+  // Stateless business-model classification (see classifyBusinessModel above).
+  // POST {items:[{name,industry}]} (<=60) -> {results:[{i,business_model}]}. Callers persist.
+  if (path==='/api/companies/classify-batch' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const items = (Array.isArray(body.items)?body.items:[]).slice(0,60)
+      .map(it=>({name:String(it.name||'').slice(0,200), industry:String(it.industry||'').slice(0,100)}));
+    if (!items.length) return err(400,'Missing items');
+    try {
+      const results = await classifyBusinessModel(env, items);
+      return ok({results});
+    } catch (e) {
+      return err(502, String(e.message||e).slice(0,300));
     }
   }
 
