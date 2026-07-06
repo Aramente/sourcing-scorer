@@ -38,10 +38,12 @@ const execFileAsync = promisify(execFile);
 
 const DATA = path.join(__dirname, 'data');
 const OUT = path.join(DATA, 'sql');
-const PER_FILE = 500;
 const CONCURRENCY = 4;
 const MIN_RATE_REMAINING = 200; // below this, sleep until the rate window resets
 const RATE_CHECK_EVERY = 25; // check quota every N gh api calls
+const CHECKPOINT_EVERY = 200; // flush matched rows to SQL + record checked ids this often,
+                               // so a kill mid-run loses at most this many companies' API work
+const SEEN_IDS_FILE = path.join(DATA, 'tech_stack_seen_ids.json');
 
 // Slugs some companies use for their GitHub org that drop a marketing prefix
 // from their domain's first label (e.g. getsentry.com -> also try "sentry").
@@ -281,6 +283,37 @@ const DRY_RUN_SAMPLE = [
   { id: 299, name: 'SQUAD - Cabinet de conseils et d’expertises', domain: 'squadgroup.com' },
 ];
 
+// ------------------------------------------------------------ checkpointing
+// A killed process (OOM, session recycle, ctrl-C) must not lose already-paid-for
+// GitHub API work. Matched rows are flushed to a new numbered SQL file every
+// CHECKPOINT_EVERY companies (not just once at the end), and every checked id
+// (matched or not) is recorded so a restart skips work already done. Delete
+// SEEN_IDS_FILE to force a full re-check (e.g. after months, in case new
+// GitHub orgs appeared for previously-unmatched companies).
+function loadSeenIds() {
+  try { return new Set(JSON.parse(fs.readFileSync(SEEN_IDS_FILE, 'utf8'))); }
+  catch { return new Set(); }
+}
+function saveSeenIds(set) {
+  fs.writeFileSync(SEEN_IDS_FILE, JSON.stringify([...set]));
+}
+function nextSqlFileIndex() {
+  const existing = fs.existsSync(OUT) ? fs.readdirSync(OUT) : [];
+  const nums = existing
+    .map(f => f.match(/^tech_stack_(\d+)\.sql$/))
+    .filter(Boolean)
+    .map(m => parseInt(m[1], 10));
+  return nums.length ? Math.max(...nums) + 1 : 0;
+}
+function flushMatches(pending, fileIndexRef) {
+  if (!pending.length) return;
+  const now = Date.now();
+  const stmts = pending.map(u => `UPDATE companies SET tech_stack=${sq(u.tech_stack)}, updated_at=${now} WHERE id=${u.id};`);
+  const name = `tech_stack_${String(fileIndexRef.i++).padStart(3, '0')}.sql`;
+  fs.writeFileSync(path.join(OUT, name), stmts.join('\n') + '\n');
+  console.log(`  checkpoint: wrote ${pending.length} rows to ${name}`);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
@@ -289,10 +322,19 @@ async function main() {
 
   fs.mkdirSync(OUT, { recursive: true });
 
-  const rows = dryRun ? DRY_RUN_SAMPLE : fetchRows(limit);
-  console.log(`${dryRun ? 'DRY RUN (curated sample)' : 'Fetched from remote D1'}: ${rows.length} companies to check`);
+  const seenIds = dryRun ? new Set() : loadSeenIds();
+  let rows = dryRun ? DRY_RUN_SAMPLE : fetchRows(limit);
+  const totalFetched = rows.length;
+  if (!dryRun && seenIds.size) {
+    rows = rows.filter(r => !seenIds.has(r.id));
+    console.log(`Resuming: ${totalFetched} fetched, ${totalFetched - rows.length} already checked (skipped), ${rows.length} remaining`);
+  } else {
+    console.log(`${dryRun ? 'DRY RUN (curated sample)' : 'Fetched from remote D1'}: ${rows.length} companies to check`);
+  }
 
+  const fileIndexRef = { i: dryRun ? 0 : nextSqlFileIndex() };
   const results = [];
+  let pendingFlush = [];
   let next = 0;
   let checked = 0;
   async function worker() {
@@ -301,15 +343,20 @@ async function main() {
       const company = rows[idx];
       const r = await matchCompany(company);
       results.push({ company, ...r });
+      seenIds.add(company.id);
       checked++;
       if (r.matched) {
         console.log(`MATCH  [${company.id}] ${company.name} (${company.domain}) -> github.com/${r.org} :: ${JSON.stringify(r.languages)} (blogOk=${r.blogOk} nameOk=${r.nameOk}, ${r.reposConsidered} repos)`);
+        if (!dryRun) pendingFlush.push({ id: company.id, tech_stack: JSON.stringify(r.languages) });
       } else if (dryRun) {
         console.log(`miss   [${company.id}] ${company.name} (${company.domain}) — ${r.tried.map(t => `${t.slug}: ${t.reason}`).join('; ') || 'no candidate slugs'}`);
       }
-      if (!dryRun && checked % 200 === 0) {
+      if (!dryRun && checked % CHECKPOINT_EVERY === 0) {
         const m = results.filter(x => x.matched).length;
         console.log(`progress: ${checked}/${rows.length} checked, ${m} matched (${(100 * m / checked).toFixed(1)}%), ${ghCallCount} gh api calls`);
+        const toFlush = pendingFlush; pendingFlush = [];
+        flushMatches(toFlush, fileIndexRef);
+        saveSeenIds(seenIds);
       }
     }
   }
@@ -330,14 +377,9 @@ async function main() {
     return;
   }
 
-  const now = Date.now();
-  const updates = matched.map(r => ({ id: r.company.id, tech_stack: JSON.stringify(r.languages) }));
-  for (let f = 0; f < updates.length; f += PER_FILE) {
-    const stmts = updates.slice(f, f + PER_FILE)
-      .map(u => `UPDATE companies SET tech_stack=${sq(u.tech_stack)}, updated_at=${now} WHERE id=${u.id};`);
-    fs.writeFileSync(path.join(OUT, `tech_stack_${String(f / PER_FILE).padStart(2, '0')}.sql`), stmts.join('\n') + '\n');
-  }
-  console.log(`wrote ${Math.ceil(updates.length / PER_FILE) || 0} SQL files to ${OUT}`);
+  flushMatches(pendingFlush, fileIndexRef);
+  saveSeenIds(seenIds);
+  console.log(`done — ${fileIndexRef.i} SQL file(s) total in ${OUT}. Apply with wrangler d1 execute --remote --file, then rerun this script to pick up any companies that still need checking.`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
