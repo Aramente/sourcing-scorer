@@ -4,7 +4,9 @@ const LIVE_CACHE_MS = 5 * 60_000;
 const SESSION_MS = 7 * 86400_000;
 
 // ── password ──────────────────────────────────────────────────────
-const KDF_ITERS = 600_000;        // current target; per-user kdf_iters supports old 10k hashes until rehash
+const KDF_ITERS = 100_000;        // Workers' PBKDF2 (SubtleCrypto) hard caps at 100k iterations —
+                                   // 600k threw on every login (see git history), silently locking
+                                   // everyone out the moment a fresh login was ever needed.
 const LOCK_AFTER = 10;            // failed attempts before lockout
 const LOCK_MS = 15 * 60_000;
 async function hashPassword(plain, salt, iters = KDF_ITERS) {

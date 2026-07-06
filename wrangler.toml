@@ -6,6 +6,13 @@ workers_dev = true
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# Without this, Cloudflare serves static assets (including index.html at "/")
+# directly and never invokes fetch() below — meaning the session/login gate
+# in this file never actually runs for "/". That's the real root cause of the
+# reload loop: an expired session got 401s from /api/* (Worker-handled) while
+# "/" kept serving the full SPA regardless of auth (asset-handled, bypassing
+# the session check entirely), so it reloaded and repeated forever.
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
