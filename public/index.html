@@ -603,7 +603,19 @@ function rebuildAllJobs(){
   ];
 }
 
-function apiFetch(url,def){return fetch(url).then(r=>{if(r.status===401){location.href='/';return def}return r.json()}).catch(()=>def)}
+// On 401, loadState()'s 10 parallel apiFetch calls would each independently redirect to '/' —
+// but '/' still serves the SPA if the cookie is merely borderline (e.g. a race with the D1
+// session check under the resulting request storm), so the app reloads, calls loadState()
+// again, and repeats forever. Force a real logout (clears the HttpOnly cookie server-side, so
+// the next '/' is deterministically unauthenticated) and only do it once per page load.
+let _authRedirecting=false;
+function apiFetch(url,def){return fetch(url).then(r=>{
+  if(r.status===401){
+    if(!_authRedirecting){_authRedirecting=true;fetch('/api/auth/logout').catch(()=>{}).finally(()=>{location.href='/'})}
+    return def;
+  }
+  return r.json();
+}).catch(()=>def)}
 async function loadState(){
   const [dec,blk,rqs,customJobsData,settingsData,me,liveJobsData,counts,prefData,usCitiesData]=await Promise.all([
     apiFetch('/api/decisions',{}),
