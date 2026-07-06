@@ -618,6 +618,7 @@ async function loadState(){
     apiFetch('/api/us-companies/cities',[]),
   ]);
   decisions=dec;
+  companyRepCache=null;
   blockedTerms=blk.terms||[];
   sharedBlockedTerms=blk.sharedTerms||[];
   hiddenPatterns=blk.patterns||[];
@@ -671,7 +672,23 @@ async function loadUSCompanies(){
 // ═══════════════════════════════════════════════════════════════════
 function ckey(c){return (c.name||c.url||'')+'|'+c.company}
 function dkey(jid,c){return jid+'::'+ckey(c)}
-function companyReputation(company){if(!company)return 0;const co=company.toLowerCase();let kept=0,skipped=0;for(const[k,v]of Object.entries(decisions)){if(v!=='kept'&&v!=='excl')continue;const sep=k.indexOf('::');if(sep===-1)continue;const cpart=k.slice(sep+2);const pipe=cpart.lastIndexOf('|');if(pipe===-1)continue;const dc=cpart.slice(pipe+1).toLowerCase();if(dc===co){if(v==='kept')kept++;else skipped++;}}return Math.min(15,Math.max(-15,kept*5-skipped*3))}
+// companyReputation() is called on every rendered card on every decide() click. A per-call
+// scan over all accumulated decisions is O(M) and with thousands of decisions makes each
+// click visibly hang. companyRepCache mirrors decisions as {company(lowercased): {kept,skipped}},
+// built once lazily and kept in sync incrementally by _repDelta() wherever decisions[k] changes.
+let companyRepCache=null;
+function _companyFromKey(k){const sep=k.indexOf('::');if(sep===-1)return null;const cpart=k.slice(sep+2);const pipe=cpart.lastIndexOf('|');if(pipe===-1)return null;return cpart.slice(pipe+1).toLowerCase()}
+function _repEntry(co){return companyRepCache[co]||(companyRepCache[co]={kept:0,skipped:0})}
+function _ensureRepCache(){if(companyRepCache)return;companyRepCache={};for(const[k,v]of Object.entries(decisions)){if(v!=='kept'&&v!=='excl')continue;const co=_companyFromKey(k);if(!co)continue;const e=_repEntry(co);if(v==='kept')e.kept++;else e.skipped++}}
+function _repDelta(k,prevVal,newVal){
+  if(prevVal===newVal)return;
+  _ensureRepCache();
+  const co=_companyFromKey(k);if(!co)return;
+  const e=_repEntry(co);
+  if(prevVal==='kept')e.kept--;else if(prevVal==='excl')e.skipped--;
+  if(newVal==='kept')e.kept++;else if(newVal==='excl')e.skipped++;
+}
+function companyReputation(company){if(!company)return 0;_ensureRepCache();const e=companyRepCache[company.toLowerCase()];if(!e)return 0;return Math.min(15,Math.max(-15,e.kept*5-e.skipped*3))}
 function _wordIn(hay,needle,allowPrefix){let i=hay.indexOf(needle);while(i!==-1){const pre=i===0||!/[a-z0-9]/.test(hay[i-1]);const j=i+needle.length;const post=j===hay.length||!/[a-z0-9]/.test(hay[j]);if(pre&&(post||(allowPrefix&&needle.length>=6)))return true;i=hay.indexOf(needle,i+1)}return false}
 function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}let best=0;for(const[key,c]of prefMap){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){const b=c.tier===1?15:10;if(b>best)best=b}}return best}
 // Per-job company-filter boost (docs/specs/2026-07-02-company-db-reframe.md) —
@@ -1326,6 +1343,7 @@ function updateDecisionUI(k){
 function _setDecision(k,val,save){
   const prevVal=decisions[k];
   if(val!==undefined)decisions[k]=val;else delete decisions[k];
+  _repDelta(k,prevVal,val);
   _learnDelta(k,prevVal,val);
   updateDecisionUI(k);
   if(save)saveDec(k,val||null);
@@ -1339,6 +1357,7 @@ function decide(k,action){
   const prev=decisions[k];
   const next=prev===action?undefined:action;
   if(next)decisions[k]=next;else delete decisions[k];
+  _repDelta(k,prev,next);
   _learnDelta(k,prev,next);
   _lastUndo=()=>_setDecision(k,prev,true);
   updateDecisionUI(k);
@@ -1514,7 +1533,7 @@ function updateThreshold(v){
 function updateFilter(key,val){settings[key]=val;saveSettings()}
 async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})}).catch(()=>null);if(!res||!res.ok){showToast('Failed to add role — please retry');return}const {id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderJobsList();showToast('Role added')}
 async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);customJobs=jobs;rebuildAllJobs();delete scoredByJob[id];delete candidateCounts[id];delete importsCache[id];if(currentJobId===id){currentJobId=null;_prevScreen='picker'}await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList()}
-async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};await fetch('/api/decisions',{method:'DELETE'});renderList();renderPicker();showToast('Decisions cleared')}
+async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};companyRepCache=null;await fetch('/api/decisions',{method:'DELETE'});renderList();renderPicker();showToast('Decisions cleared')}
 async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
 async function clearCandidates(){
   if(!currentJobId){showToast('Open a job first to clear its candidates');return}
