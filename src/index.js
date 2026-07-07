@@ -964,7 +964,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname==='/api/auth/login' && request.method==='POST') return handleLogin(request, env);
-    if (url.pathname==='/api/auth/logout') return await handleLogout(request, env);
+    if (url.pathname==='/api/auth/logout' && request.method==='POST') return await handleLogout(request, env);
 
     const session = await getSession(request, env);
 
