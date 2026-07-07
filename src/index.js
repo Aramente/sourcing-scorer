@@ -804,6 +804,23 @@ async function handleAPI(request, url, session, env) {
     }
   }
 
+  // Batch lookup: candidate.company is scraped as a bare domain (e.g. "axa.com"),
+  // matched against companies.domain to surface industry context in the triage list.
+  // POST {domains:[...]} (<=60) -> {results:{domain:industry}}
+  if (path==='/api/companies/industries' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const domains = [...new Set((Array.isArray(body.domains)?body.domains:[])
+      .map(d=>String(d||'').toLowerCase().trim()).filter(Boolean))].slice(0,60);
+    if (!domains.length) return ok({results:{}});
+    const qs = domains.map(()=>'?').join(',');
+    const rows = await env.DB.prepare(
+      `SELECT domain,industry FROM companies WHERE LOWER(domain) IN (${qs}) AND industry IS NOT NULL AND industry!=''`
+    ).bind(...domains).all();
+    const results = {};
+    for (const r of rows.results) results[r.domain.toLowerCase()] = r.industry;
+    return ok({results});
+  }
+
   // Distinct values for filter dropdowns.
   if (path==='/api/companies/facets' && method==='GET') {
     const [countries, industries, models, stacks] = await Promise.all([
