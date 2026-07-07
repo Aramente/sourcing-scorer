@@ -778,6 +778,11 @@ function companyPreferenceBonus(company){
 // falls back to companyPreferenceBonus so unconfigured jobs keep working unchanged.
 let jobCompanyBoost=new Map();
 let _jobCompanyBoostPromise=null;
+// "Must have" conditions are meant to narrow the list to exact matches (per the
+// Companies screen's own copy) — jobMustActive/jobMustDomains enforce that as a hard
+// exclude in getCandidatesForJob. "Prefer" conditions only ever feed jobCompanyBoost.
+let jobMustActive=false;
+let jobMustDomains=new Set();
 // Linear-scan match against jobCompanyBoost is the same O(N-candidates x M-boost) cost
 // companyPreferenceBonus() had before its cache — memoized the same way, cleared whenever
 // jobCompanyBoost itself is rebuilt (job change or filters saved).
@@ -789,19 +794,34 @@ function loadJobCompanyBoost(jobId){
 async function _loadJobCompanyBoost(jobId){
   jobCompanyBoost=new Map();
   _jobBoostCache=new Map();
+  jobMustActive=false;
+  jobMustDomains=new Set();
   if(!jobId)return;
   const saved=await fetch(`/api/company-filters?job=${encodeURIComponent(jobId)}`).then(r=>r.ok?r.json():null).catch(()=>null);
   const filters=(saved&&Array.isArray(saved.filters))?saved.filters:[];
   if(!filters.length)return;
-  const res=await fetch('/api/companies/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters,limit:5000})}).then(r=>r.ok?r.json():null).catch(()=>null);
-  const rows=(res&&Array.isArray(res.companies))?res.companies:[];
+  // Page through every match (not just the first 5000) — a broad "must" filter (e.g.
+  // region=EU) can match more companies than that, and truncating would silently let
+  // non-matches back into the "must" set instead of excluding them.
+  const rows=[];
+  let hasMustFilter=false, offset=0, total=Infinity;
+  while(rows.length<total&&rows.length<20000){
+    const res=await fetch('/api/companies/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters,limit:5000,offset})}).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(!res||!Array.isArray(res.companies)||!res.companies.length)break;
+    hasMustFilter=!!res.hasMustFilter;
+    total=res.total||0;
+    rows.push(...res.companies);
+    offset+=res.companies.length;
+  }
   const maxScore=Math.max(1,...rows.map(r=>r.match_score||0));
   const map=new Map();
   for(const r of rows){
     const boost=r.match_score>0?Math.round(8+7*(r.match_score/maxScore)):8; // 8 = in-list flat bonus, up to 15 for top-ranked matches
     map.set(r.name.toLowerCase().trim(),boost);
+    if(r.domain)jobMustDomains.add(r.domain.toLowerCase().trim());
   }
   jobCompanyBoost=map;
+  jobMustActive=hasMustFilter;
 }
 function companyFilterOrPreferenceBonus(company){
   if(!company)return 0;
@@ -1317,7 +1337,8 @@ async function deleteImport(importName){
   showToast(`"${label}" deleted`);
   await refreshImports();
 }
-function getCandidatesForJob(){const all=(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c));if(currentImportName===null)return all;return all.filter(c=>c.importName===currentImportName)}
+function isMustExcluded(c){return jobMustActive&&!jobMustDomains.has((c.company||'').toLowerCase().trim())}
+function getCandidatesForJob(){const all=(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c)&&!isMustExcluded(c));if(currentImportName===null)return all;return all.filter(c=>c.importName===currentImportName)}
 function skippedCandidates(){return getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='excl')}
 
 function updateStats(){
@@ -1386,8 +1407,13 @@ function renderList(){
   renderControls();
   renderBlockedChips();
   const allRaw=scoredByJob[currentJobId]||[];
-  const hiddenDecided=allRaw.filter(c=>{const d=decisions[dkey(currentJobId,c)];return d&&d!=='undet'&&!passesFilters(c)}).length;
-  document.getElementById('filter-warn').innerHTML=hiddenDecided?`<div style="font-size:12px;color:var(--amber,#b45309);background:var(--amber-dim,#fef3c7);border:1px solid var(--amber-border,#fde68a);border-radius:8px;padding:8px 12px;margin-bottom:8px">⚠ ${hiddenDecided} decided candidate${hiddenDecided>1?'s are':' is'} hidden by your title filters</div>`:'';
+  const hiddenByTitle=allRaw.filter(c=>{const d=decisions[dkey(currentJobId,c)];return d&&d!=='undet'&&!passesFilters(c)}).length;
+  const hiddenByMust=allRaw.filter(c=>{const d=decisions[dkey(currentJobId,c)];return d&&d!=='undet'&&passesFilters(c)&&isMustExcluded(c)}).length;
+  const warnParts=[];
+  if(hiddenByTitle)warnParts.push(`${hiddenByTitle} by your title filters`);
+  if(hiddenByMust)warnParts.push(`${hiddenByMust} by "Must have" company filters`);
+  const hiddenDecided=hiddenByTitle+hiddenByMust;
+  document.getElementById('filter-warn').innerHTML=hiddenDecided?`<div style="font-size:12px;color:var(--amber,#b45309);background:var(--amber-dim,#fef3c7);border:1px solid var(--amber-border,#fde68a);border-radius:8px;padding:8px 12px;margin-bottom:8px">⚠ ${hiddenDecided} decided candidate${hiddenDecided>1?'s are':' is'} hidden — ${warnParts.join(', ')}</div>`:'';
   document.getElementById('cand-list').innerHTML=pageSlice.map((c,i)=>{
     const k=dkey(currentJobId,c);const dec=decisions[k]||'undet';const adj=adjustedScore(c);
     const tier=adj>=ht?'hot':'warm';

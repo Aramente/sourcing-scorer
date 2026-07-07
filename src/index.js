@@ -748,7 +748,7 @@ async function handleAPI(request, url, session, env) {
               (${scoreExpr}) AS match_score
        FROM companies ${whereSql} ORDER BY match_score DESC, name LIMIT ? OFFSET ?`
     ).bind(...scoreParams, ...wParams, limit, offset).all();
-    return ok({total: total.n, companies: rows.results});
+    return ok({total: total.n, companies: rows.results, hasMustFilter: where.length>0});
   }
 
   // Export every match as a Sales Nav account-list CSV (LinkedIn company URLs).
