@@ -671,6 +671,7 @@ function rebuildPrefMap(){
     const ex=prefMap.get(k);
     if(!ex||c.tier<ex.tier)prefMap.set(k,{name:c.name,tier:c.tier,category:c.category});
   }
+  _prefBonusCache.clear();
 }
 async function loadUSCompanies(){
   const sel=settings.usCities||[];
@@ -702,7 +703,26 @@ function _repDelta(k,prevVal,newVal){
 }
 function companyReputation(company){if(!company)return 0;_ensureRepCache();const e=companyRepCache[company.toLowerCase()];if(!e)return 0;return Math.min(15,Math.max(-15,e.kept*5-e.skipped*3))}
 function _wordIn(hay,needle,allowPrefix){let i=hay.indexOf(needle);while(i!==-1){const pre=i===0||!/[a-z0-9]/.test(hay[i-1]);const j=i+needle.length;const post=j===hay.length||!/[a-z0-9]/.test(hay[j]);if(pre&&(post||(allowPrefix&&needle.length>=6)))return true;i=hay.indexOf(needle,i+1)}return false}
-function companyPreferenceBonus(company){if(!company||!prefMap.size)return 0;const n=company.toLowerCase().trim();if(prefMap.has(n)){const c=prefMap.get(n);return c.tier===1?15:10}let best=0;for(const[key,c]of prefMap){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){const b=c.tier===1?15:10;if(b>best)best=b}}return best}
+// companyPreferenceBonus() falls through to a linear scan of prefMap (474+ entries) whenever
+// a candidate's company isn't an exact match — same O(N-candidates x M-prefMap) cost as
+// companyReputation() used to have. prefMap only changes on rare events (settings load, adding/
+// removing a preferred company, toggling a US city), so a plain memo cleared at those points
+// (not an incremental delta cache) is all that's needed.
+let _prefBonusCache=new Map();
+function companyPreferenceBonus(company){
+  if(!company||!prefMap.size)return 0;
+  const n=company.toLowerCase().trim();
+  if(_prefBonusCache.has(n))return _prefBonusCache.get(n);
+  let bonus;
+  if(prefMap.has(n)){bonus=prefMap.get(n).tier===1?15:10}
+  else{
+    let best=0;
+    for(const[key,c]of prefMap){if((key.length>=3&&_wordIn(n,key,true))||(n.length>=3&&_wordIn(key,n,false))){const b=c.tier===1?15:10;if(b>best)best=b}}
+    bonus=best;
+  }
+  _prefBonusCache.set(n,bonus);
+  return bonus;
+}
 // Per-job company-filter boost (docs/specs/2026-07-02-company-db-reframe.md) —
 // takes over from the old global tier bonus once a job has filters saved;
 // falls back to companyPreferenceBonus so unconfigured jobs keep working unchanged.
@@ -1756,12 +1776,14 @@ async function addPrefCompany(){
   if(!res.ok){showToast('Failed to add');return}
   preferredCompanies.push({name,tier,category:'custom'});
   prefMap.set(name.toLowerCase().trim(),{name,tier,category:'custom'});
+  _prefBonusCache.clear();
   inp.value='';renderPrefList();renderList();showToast('Added: '+name);
 }
 async function removePrefCompany(name){
   await fetch(`/api/preferred-companies/${encodeURIComponent(name)}`,{method:'DELETE'});
   preferredCompanies=preferredCompanies.filter(c=>c.name!==name);
   prefMap.delete(name.toLowerCase().trim());
+  _prefBonusCache.clear();
   renderPrefList();renderList();showToast('Removed: '+name);
 }
 
