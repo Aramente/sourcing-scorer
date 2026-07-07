@@ -189,7 +189,7 @@ body{min-height:100vh}
 .cf-add-wrap{position:relative;display:inline-flex;align-items:center;margin-bottom:16px}
 .cf-add-wrap select{font:inherit;font-size:13px;font-weight:600;color:var(--blue);padding:8px 32px 8px 14px;border:1.5px dashed var(--blue);border-radius:20px;background:var(--blue-dim);cursor:pointer;appearance:none;-webkit-appearance:none}
 .cf-add-wrap select:hover{background:#DCEAFE}
-.cf-add-wrap::after{content:'▾';position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--blue);font-size:10px;pointer-events:none}
+.cf-add-wrap::after{content:'▾';position:absolute;right:13px;top:50%;transform:translateY(-50%);color:var(--blue);font-size:13px;font-weight:700;pointer-events:none}
 .cf-add-wrap select option:disabled{color:var(--text-3)}
 .cf-rows{display:flex;flex-direction:column;gap:10px}
 .cf-row{display:flex;align-items:flex-start;gap:12px;background:var(--bg);border:1.5px solid var(--border);border-left:4px solid var(--border-s);border-radius:10px;padding:12px 14px}
@@ -206,7 +206,7 @@ body{min-height:100vh}
 .cf-rank-stepper{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0}
 .cf-rank-stepper b{color:var(--text-2);font-weight:700}
 .cf-rank-stepper .cf-rank-btns{display:inline-flex;gap:2px}
-.cf-rank-btns button{font:inherit;font-size:11px;color:var(--text-3);background:var(--white);border:1px solid var(--border-s);border-radius:5px;width:19px;height:19px;cursor:pointer;line-height:1}
+.cf-rank-btns button{font:inherit;font-size:11px;color:var(--text-3);background:var(--white);border:1px solid var(--border-s);border-radius:50%;width:19px;height:19px;cursor:pointer;line-height:1}
 .cf-rank-btns button:hover{color:var(--blue);border-color:var(--blue)}
 .cf-chip-search{font:inherit;font-size:12px;padding:5px 10px;border:1.5px solid var(--border-s);border-radius:7px;background:var(--white);width:100%;max-width:220px;margin-bottom:2px}
 .cf-chip-search:focus{border-color:var(--blue);outline:none}
@@ -218,9 +218,9 @@ body{min-height:100vh}
 .cf-value-chip.hidden-by-search{display:none}
 .cf-num-input{font:inherit;font-size:13px;width:90px;padding:6px 9px;border:none;border-radius:6px;background:var(--white)}
 .cf-num-input:focus{outline:2px solid var(--blue);outline-offset:-1px}
-.cf-range-group{display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1.5px solid var(--border-s);border-radius:8px;padding:2px 4px}
+.cf-range-group{display:inline-flex;align-self:flex-start;align-items:center;gap:6px;background:var(--white);border:1.5px solid var(--border-s);border-radius:8px;padding:2px 4px}
 .cf-range-group span{color:var(--text-3);font-size:12px}
-.cf-tag-input{font:inherit;font-size:12px;padding:4px 10px;border:1.5px dashed var(--border-s);border-radius:20px;background:var(--white);width:140px}
+.cf-tag-input{font:inherit;font-size:12px;padding:4px 10px;border:1.5px dashed var(--border-s);border-radius:20px;background:var(--white);width:170px}
 .cf-tag-input:focus{border-style:solid;border-color:var(--blue);outline:none}
 .cf-remove{font:inherit;font-size:18px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.2}
 .cf-remove:hover{color:var(--red)}
@@ -229,8 +229,8 @@ body{min-height:100vh}
 .cf-results-head{display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .cf-results-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
 .cf-results-count{font-size:15px;font-weight:700}
-.cf-table-head{display:grid;grid-template-columns:1.6fr 1.1fr 1.1fr .8fr 24px;gap:12px;padding:0 4px 8px;border-bottom:1.5px solid var(--border);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
-.cf-company-row{display:grid;grid-template-columns:1.6fr 1.1fr 1.1fr .8fr 24px;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--border);font-size:13px}
+.cf-table-head{display:grid;grid-template-columns:1.1fr 1.1fr 1.1fr .7fr 24px;gap:12px;padding:0 4px 8px;border-bottom:1.5px solid var(--border);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+.cf-company-row{display:grid;grid-template-columns:1.1fr 1.1fr 1.1fr .7fr 24px;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--border);font-size:13px}
 .cf-company-row:last-child{border-bottom:none}
 .cf-company-row:nth-child(even){background:var(--bg)}
 .cf-company-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -292,6 +292,7 @@ body{min-height:100vh}
 
 <!-- COMPANIES (per-job filter/export, skippable — docs/specs/2026-07-02-company-db-reframe.md) -->
 <div id="screen-companies" class="screen">
+ <div style="max-width:900px;margin:0 auto;padding:48px 24px 80px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
     <div style="display:flex;align-items:center;gap:14px">
       <button class="btn-back" onclick="showScreen('imports');renderImports();loadJobCompanyBoost(currentJobId)">← Imports</button>
@@ -332,6 +333,7 @@ body{min-height:100vh}
     <div id="cf-count" class="cf-results-head"></div>
     <div id="cf-preview"></div>
   </div>
+ </div>
 </div>
 
 <!-- PICKER -->
@@ -932,6 +934,9 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 // Company facet values (country/industry) are stored lowercase in the DB. Title-case for
 // display only — the raw value still goes in data-val/filter payloads so matching is unaffected.
 function tc(s){return String(s).replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1))}
+// Some industry values are underscore slugs from a second taxonomy tier mixed into the same
+// column (us_tech, us_saas...) rather than descriptive names — despace and fix the "US" prefix.
+function tcSlug(s){return tc(String(s).replace(/_/g,' ')).replace(/^Us\b/,'US')}
 function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings();_syncHash(name)}
 // ── hash routing: refresh/back-button keep the current screen, job & import ──
 let _navGuard=false;
@@ -1731,16 +1736,16 @@ function renderCompanyFilters(){
         const selectedChips=(f.value||[]).map(v=>`<span class="cf-value-chip active" data-idx="${idx}" data-val="${esc(v)}">${esc(v)} ×</span>`).join('');
         const suggestChips=known.filter(v=>!sel.has(v)).map(v=>`<span class="cf-value-chip" data-idx="${idx}" data-val="${esc(v)}">${esc(v)}</span>`).join('');
         const searchBox=known.length>8?`<input class="cf-chip-search" placeholder="Search tech…" oninput="filterChipSearch(${idx},this.value)">`:'';
-        valueHtml=`${searchBox}<div class="cf-chip-area">${selectedChips}${suggestChips}</div><input class="cf-tag-input" placeholder="other tech, Enter" onkeydown="if(event.key==='Enter'&&this.value.trim()){toggleFilterValueChip(${idx},this.value.trim());this.value=''}">`;
+        valueHtml=`${searchBox}<div class="cf-chip-area">${selectedChips}${suggestChips}</div><input class="cf-tag-input" placeholder="Add another, Enter" onkeydown="if(event.key==='Enter'&&this.value.trim()){toggleFilterValueChip(${idx},this.value.trim());this.value=''}">`;
       } else {
         const opts=f.field==='region'?CF_REGION_OPTS.slice()
-          :f.field==='country'?(companyFacets&&companyFacets.countries||[]).map(c=>[c.v,`${tc(c.v)} (${c.n})`])
-          :f.field==='industry'?(companyFacets&&companyFacets.industries||[]).map(c=>[c.v,`${tc(c.v)} (${c.n})`])
-          :(companyFacets&&companyFacets.businessModels||[]).map(c=>[c.v,`${tc(c.v)} (${c.n})`]);
+          :f.field==='country'?(companyFacets&&companyFacets.countries||[]).map(c=>[c.v,`${tcSlug(c.v)} (${c.n})`])
+          :f.field==='industry'?(companyFacets&&companyFacets.industries||[]).map(c=>[c.v,`${tcSlug(c.v)} (${c.n})`])
+          :(companyFacets&&companyFacets.businessModels||[]).map(c=>[c.v,`${tcSlug(c.v)} (${c.n})`]);
         opts.sort((a,b)=>(sel.has(a[0])?0:1)-(sel.has(b[0])?0:1));
         const searchable=CF_SEARCHABLE_FIELDS.includes(f.field)&&opts.length>8;
         const searchBox=searchable?`<input class="cf-chip-search" placeholder="Search ${CF_LABELS[f.field].toLowerCase()}…" oninput="filterChipSearch(${idx},this.value)">`:'';
-        const chipArea=opts.length?`<div class="cf-chip-area${searchable?'':' short'}">${opts.map(([v,label])=>`<span class="cf-value-chip ${sel.has(v)?'active':''}" data-idx="${idx}" data-val="${esc(v)}">${esc(label)}</span>`).join('')}</div>`:`<div class="cf-empty" style="padding:10px;text-align:left">No values in the DB yet</div>`;
+        const chipArea=opts.length?`<div class="cf-chip-area${searchable?'':' short'}">${opts.map(([v,label])=>`<span class="cf-value-chip ${sel.has(v)?'active':''}" data-idx="${idx}" data-val="${esc(v)}">${esc(label)}${sel.has(v)?' ×':''}</span>`).join('')}</div>`:`<div class="cf-empty" style="padding:10px;text-align:left">No values in the DB yet</div>`;
         valueHtml=searchBox+chipArea;
       }
     } else if(f.field==='employees'||f.field==='raised'){
