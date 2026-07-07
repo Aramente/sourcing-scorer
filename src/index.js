@@ -806,12 +806,13 @@ async function handleAPI(request, url, session, env) {
 
   // Distinct values for filter dropdowns.
   if (path==='/api/companies/facets' && method==='GET') {
-    const [countries, industries, models] = await Promise.all([
+    const [countries, industries, models, stacks] = await Promise.all([
       env.DB.prepare('SELECT hq_country AS v, COUNT(*) AS n FROM companies WHERE hq_country IS NOT NULL GROUP BY hq_country ORDER BY n DESC LIMIT 60').all(),
       env.DB.prepare('SELECT industry AS v, COUNT(*) AS n FROM companies WHERE industry IS NOT NULL GROUP BY industry ORDER BY n DESC LIMIT 40').all(),
       env.DB.prepare('SELECT business_model AS v, COUNT(*) AS n FROM companies WHERE business_model IS NOT NULL GROUP BY business_model ORDER BY n DESC LIMIT 20').all(),
+      env.DB.prepare("SELECT je.value AS v, COUNT(*) AS n FROM companies, json_each(companies.tech_stack) je WHERE companies.tech_stack!='[]' GROUP BY je.value ORDER BY n DESC LIMIT 40").all(),
     ]);
-    return ok({countries:countries.results, industries:industries.results, businessModels:models.results});
+    return ok({countries:countries.results, industries:industries.results, businessModels:models.results, techStacks:stacks.results});
   }
 
   const prefDel = path.match(/^\/api\/preferred-companies\/(.+)$/);

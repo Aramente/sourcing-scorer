@@ -179,27 +179,63 @@ body{min-height:100vh}
 .btn-block-global:hover{background:var(--red-dim)}
 .btn-scrape2{font:inherit;font-size:13px;font-weight:600;background:var(--white);color:var(--text);border:1.5px solid var(--border-s);border-radius:8px;padding:8px 16px;cursor:pointer}
 .btn-scrape2:hover{border-color:var(--blue);color:var(--blue)}
-.cf-row{display:flex;align-items:flex-start;gap:10px;background:var(--white);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px}
-.cf-row-main{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
-.cf-row-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.cf-label{font-size:13px;font-weight:600;flex-shrink:0}
-.cf-mode-btn{font:inherit;font-size:11px;font-weight:600;border-radius:20px;padding:2px 10px;cursor:pointer;border:1.5px solid transparent}
-.cf-mode-must{background:var(--red-dim);color:var(--red);border-color:#FECACA}
-.cf-mode-ranked{background:var(--blue-dim);color:var(--blue);border-color:#BFDBFE}
-.cf-rank-badge{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums}
-.cf-rank-btns{display:inline-flex;gap:2px}
-.cf-rank-btns button{font:inherit;font-size:11px;color:var(--text-3);background:none;border:1px solid var(--border-s);border-radius:5px;width:20px;height:20px;cursor:pointer;line-height:1}
+/* ── COMPANIES filter builder ──
+   Signature move: a colored left rail on each condition (red=must-have,
+   blue=prefer) makes the query's shape scannable without reading text. */
+.cf-section{background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;margin-bottom:20px}
+.cf-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+.cf-section-title{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.cf-section-hint{font-size:12px;color:var(--text-3);margin-bottom:16px}
+.cf-add-wrap{position:relative;display:inline-flex;align-items:center;margin-bottom:16px}
+.cf-add-wrap select{font:inherit;font-size:13px;font-weight:600;color:var(--blue);padding:8px 32px 8px 14px;border:1.5px dashed var(--blue);border-radius:20px;background:var(--blue-dim);cursor:pointer;appearance:none;-webkit-appearance:none}
+.cf-add-wrap select:hover{background:#DCEAFE}
+.cf-add-wrap::after{content:'▾';position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--blue);font-size:10px;pointer-events:none}
+.cf-add-wrap select option:disabled{color:var(--text-3)}
+.cf-rows{display:flex;flex-direction:column;gap:10px}
+.cf-row{display:flex;align-items:flex-start;gap:12px;background:var(--bg);border:1.5px solid var(--border);border-left:4px solid var(--border-s);border-radius:10px;padding:12px 14px}
+.cf-row[data-mode="must"]{border-left-color:var(--red)}
+.cf-row[data-mode="ranked"]{border-left-color:var(--blue)}
+.cf-row-main{flex:1;display:flex;flex-direction:column;gap:10px;min-width:0}
+.cf-row-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cf-icon{font-size:15px;line-height:1;flex-shrink:0}
+.cf-label{font-size:13.5px;font-weight:700;flex-shrink:0}
+.cf-mode-seg{display:inline-flex;background:var(--white);border:1.5px solid var(--border-s);border-radius:20px;padding:2px;flex-shrink:0}
+.cf-mode-seg button{font:inherit;font-size:11px;font-weight:600;border-radius:16px;padding:3px 11px;cursor:pointer;border:none;background:none;color:var(--text-3);transition:all .12s}
+.cf-mode-seg button.on[data-m="must"]{background:var(--red);color:#fff}
+.cf-mode-seg button.on[data-m="ranked"]{background:var(--blue);color:#fff}
+.cf-rank-stepper{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0}
+.cf-rank-stepper b{color:var(--text-2);font-weight:700}
+.cf-rank-stepper .cf-rank-btns{display:inline-flex;gap:2px}
+.cf-rank-btns button{font:inherit;font-size:11px;color:var(--text-3);background:var(--white);border:1px solid var(--border-s);border-radius:5px;width:19px;height:19px;cursor:pointer;line-height:1}
 .cf-rank-btns button:hover{color:var(--blue);border-color:var(--blue)}
-.cf-value-chips{display:flex;flex-wrap:wrap;gap:6px}
-.cf-value-chip{font-size:12px;padding:3px 10px;border-radius:20px;border:1.5px solid var(--border-s);background:var(--white);cursor:pointer;color:var(--text-2)}
+.cf-chip-search{font:inherit;font-size:12px;padding:5px 10px;border:1.5px solid var(--border-s);border-radius:7px;background:var(--white);width:100%;max-width:220px;margin-bottom:2px}
+.cf-chip-search:focus{border-color:var(--blue);outline:none}
+.cf-chip-area{display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow-y:auto;padding-right:2px}
+.cf-chip-area.short{max-height:none;overflow:visible}
+.cf-value-chip{font-size:12px;font-weight:500;padding:4px 11px;border-radius:20px;border:1.5px solid var(--border-s);background:var(--white);cursor:pointer;color:var(--text-2);transition:all .1s;line-height:1.3}
+.cf-value-chip:hover{border-color:var(--blue)}
 .cf-value-chip.active{background:var(--blue);border-color:var(--blue);color:#fff}
-.cf-num-input{font:inherit;font-size:13px;width:90px;padding:5px 8px;border:1.5px solid var(--border-s);border-radius:6px}
-.cf-remove{font:inherit;font-size:16px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0}
+.cf-value-chip.hidden-by-search{display:none}
+.cf-num-input{font:inherit;font-size:13px;width:90px;padding:6px 9px;border:none;border-radius:6px;background:var(--white)}
+.cf-num-input:focus{outline:2px solid var(--blue);outline-offset:-1px}
+.cf-range-group{display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1.5px solid var(--border-s);border-radius:8px;padding:2px 4px}
+.cf-range-group span{color:var(--text-3);font-size:12px}
+.cf-tag-input{font:inherit;font-size:12px;padding:4px 10px;border:1.5px dashed var(--border-s);border-radius:20px;background:var(--white);width:140px}
+.cf-tag-input:focus{border-style:solid;border-color:var(--blue);outline:none}
+.cf-remove{font:inherit;font-size:18px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:0 2px;flex-shrink:0;line-height:1.2}
 .cf-remove:hover{color:var(--red)}
-.cf-company-row{display:flex;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid var(--border);font-size:13px}
+.cf-empty{border:2px dashed var(--border-s);border-radius:12px;padding:28px;text-align:center;color:var(--text-3);font-size:13px}
+.cf-results{background:var(--white);border:1.5px solid var(--border);border-radius:14px;padding:20px 22px}
+.cf-results-head{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.cf-results-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.cf-results-count{font-size:15px;font-weight:700}
+.cf-table-head{display:grid;grid-template-columns:1.6fr 1.1fr 1.1fr .8fr 24px;gap:12px;padding:0 4px 8px;border-bottom:1.5px solid var(--border);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+.cf-company-row{display:grid;grid-template-columns:1.6fr 1.1fr 1.1fr .8fr 24px;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--border);font-size:13px}
 .cf-company-row:last-child{border-bottom:none}
-.cf-company-name{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cf-company-meta{color:var(--text-3);font-size:12px;flex-shrink:0;min-width:70px;text-align:right}
+.cf-company-row:nth-child(even){background:var(--bg)}
+.cf-company-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-company-meta{color:var(--text-3);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-more{text-align:center;padding:14px 4px 2px;font-size:12px;color:var(--text-3)}
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0F172A;color:#fff;font-size:13px;font-weight:500;padding:8px 18px;border-radius:20px;z-index:300;transition:opacity .3s;pointer-events:none}
 .toast.hidden{opacity:0}
 .toast.actionable{pointer-events:auto}
@@ -270,25 +306,32 @@ body{min-height:100vh}
     </div>
   </div>
 
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
-    <select id="cf-add-field" onchange="addCompanyFilterFromSelect()" style="font:inherit;font-size:13px;padding:7px 10px;border:1.5px solid var(--border-s);border-radius:8px;background:var(--white)">
-      <option value="">+ Add filter…</option>
-      <option value="region">Region</option>
-      <option value="country">Country</option>
-      <option value="industry">Industry</option>
-      <option value="business_model">Business model</option>
-      <option value="stack">Tech stack</option>
-      <option value="employees">Employees</option>
-      <option value="founded_after">Founded after</option>
-      <option value="raised">Amount raised (USD)</option>
-      <option value="name">Name contains</option>
-    </select>
-    <span style="font-size:12px;color:var(--text-3)">Must-have filters exclude non-matches; ranked filters just sort results — click a chip to switch.</span>
+  <div class="cf-section">
+    <div class="cf-section-head">
+      <div class="cf-section-title">Target list conditions</div>
+    </div>
+    <div class="cf-section-hint">Must-have narrows the list to exact matches. Prefer just ranks results higher — nothing gets excluded.</div>
+    <div class="cf-add-wrap">
+      <select id="cf-add-field" onchange="addCompanyFilterFromSelect()">
+        <option value="">+ Add a condition…</option>
+        <option value="region">🌍 Region</option>
+        <option value="country">🏳 Country</option>
+        <option value="industry">🏭 Industry</option>
+        <option value="business_model">💼 Business model</option>
+        <option value="stack">🧰 Tech stack</option>
+        <option value="employees">👥 Employees</option>
+        <option value="founded_after">📅 Founded after</option>
+        <option value="raised">💰 Amount raised (USD)</option>
+        <option value="name">🔎 Name contains</option>
+      </select>
+    </div>
+    <div id="cf-rows" class="cf-rows"></div>
   </div>
-  <div id="cf-rows" style="display:flex;flex-direction:column;gap:10px;margin:14px 0 24px"></div>
 
-  <div id="cf-count" style="font-size:14px;font-weight:600;margin-bottom:10px"></div>
-  <div id="cf-preview"></div>
+  <div class="cf-results">
+    <div id="cf-count" class="cf-results-head"></div>
+    <div id="cf-preview"></div>
+  </div>
 </div>
 
 <!-- PICKER -->
@@ -886,6 +929,9 @@ function cycleSetting(k){
 // UI HELPERS
 // ═══════════════════════════════════════════════════════════════════
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+// Company facet values (country/industry) are stored lowercase in the DB. Title-case for
+// display only — the raw value still goes in data-val/filter payloads so matching is unaffected.
+function tc(s){return String(s).replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1))}
 function showScreen(name){if(name!=='settings')_prevScreen=name;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+name).classList.add('active');if(name==='settings')renderSettings();_syncHash(name)}
 // ── hash routing: refresh/back-button keep the current screen, job & import ──
 let _navGuard=false;
@@ -1586,8 +1632,10 @@ let companyFacets=null;      // {countries,industries,businessModels} — loaded
 let companyResults={total:0,companies:[]};
 let _cfSearchDebounce=null,_cfSaveDebounce=null;
 const CF_LABELS={region:'Region',country:'Country',industry:'Industry',business_model:'Business model',stack:'Tech stack',employees:'Employees',founded_after:'Founded after',raised:'Amount raised',name:'Name contains'};
+const CF_ICONS={region:'🌍',country:'🏳',industry:'🏭',business_model:'💼',stack:'🧰',employees:'👥',founded_after:'📅',raised:'💰',name:'🔎'};
 const CF_REGION_OPTS=[['fr','France'],['eu','Europe'],['us','United States']];
 const CF_MULTI_FIELDS=['region','country','industry','business_model','stack'];
+const CF_SEARCHABLE_FIELDS=['country','industry'];
 
 async function openCompanies(){
   if(!currentJobId)return;
@@ -1617,14 +1665,29 @@ function clearCompanyFilters(){
   companyFilters=[];
   renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
 }
-function toggleFilterMode(idx){
+function setFilterMode(idx,mode){
   const f=companyFilters[idx];
-  f.mode=f.mode==='must'?'ranked':'must';
-  if(f.mode==='ranked'){
+  if(f.mode===mode)return;
+  f.mode=mode;
+  if(mode==='ranked'){
     const maxRank=Math.max(-1,...companyFilters.filter((x,i)=>i!==idx&&x.mode==='ranked').map(x=>x.rank));
     f.rank=maxRank+1;
   }
   renderCompanyFilters();runCompanySearch();saveCompanyFiltersDebounced();
+}
+function filterChipSearch(idx,q){
+  const row=document.querySelector(`.cf-row[data-idx="${idx}"] .cf-chip-area`);
+  if(!row)return;
+  const query=q.toLowerCase().trim();
+  row.querySelectorAll('.cf-value-chip').forEach(chip=>{
+    if(chip.classList.contains('active'))return; // keep your selections visible while searching for more
+    chip.classList.toggle('hidden-by-search',!!query&&!chip.textContent.toLowerCase().includes(query));
+  });
+}
+function _syncAddFieldSelect(){
+  const sel=document.getElementById('cf-add-field');if(!sel)return;
+  const used=new Set(companyFilters.map(f=>f.field));
+  for(const opt of sel.options){if(opt.value)opt.disabled=used.has(opt.value)}
 }
 function moveFilterRank(idx,dir){
   const ranked=companyFilters.filter(f=>f.mode==='ranked').sort((a,b)=>a.rank-b.rank);
@@ -1655,7 +1718,8 @@ function setFilterScalar(idx,raw){
 }
 function renderCompanyFilters(){
   const el=document.getElementById('cf-rows');if(!el)return;
-  if(!companyFilters.length){el.innerHTML=`<div class="lists-empty">No filters yet — add one above, or export the full database as-is.</div>`;return}
+  _syncAddFieldSelect();
+  if(!companyFilters.length){el.innerHTML=`<div class="cf-empty">No conditions yet — add one above, or export the full database as-is.</div>`;return}
   const rankedList=companyFilters.filter(x=>x.mode==='ranked').sort((a,b)=>a.rank-b.rank);
   el.innerHTML=companyFilters.map((f,idx)=>{
     const rankPos=f.mode==='ranked'?rankedList.indexOf(f)+1:null;
@@ -1663,32 +1727,44 @@ function renderCompanyFilters(){
     if(CF_MULTI_FIELDS.includes(f.field)){
       const sel=new Set(f.value||[]);
       if(f.field==='stack'){
-        valueHtml=`<div class="cf-value-chips">${(f.value||[]).map(v=>`<span class="cf-value-chip active" data-idx="${idx}" data-val="${esc(v)}">${esc(v)} ×</span>`).join('')}<input class="cf-num-input" style="width:150px" placeholder="add tech, Enter" onkeydown="if(event.key==='Enter'&&this.value.trim()){toggleFilterValueChip(${idx},this.value.trim());this.value=''}"></div>`;
+        const known=(companyFacets&&companyFacets.techStacks||[]).map(c=>c.v);
+        const selectedChips=(f.value||[]).map(v=>`<span class="cf-value-chip active" data-idx="${idx}" data-val="${esc(v)}">${esc(v)} ×</span>`).join('');
+        const suggestChips=known.filter(v=>!sel.has(v)).map(v=>`<span class="cf-value-chip" data-idx="${idx}" data-val="${esc(v)}">${esc(v)}</span>`).join('');
+        const searchBox=known.length>8?`<input class="cf-chip-search" placeholder="Search tech…" oninput="filterChipSearch(${idx},this.value)">`:'';
+        valueHtml=`${searchBox}<div class="cf-chip-area">${selectedChips}${suggestChips}</div><input class="cf-tag-input" placeholder="other tech, Enter" onkeydown="if(event.key==='Enter'&&this.value.trim()){toggleFilterValueChip(${idx},this.value.trim());this.value=''}">`;
       } else {
-        const opts=f.field==='region'?CF_REGION_OPTS
-          :f.field==='country'?(companyFacets&&companyFacets.countries||[]).map(c=>[c.v,`${c.v} (${c.n})`])
-          :f.field==='industry'?(companyFacets&&companyFacets.industries||[]).map(c=>[c.v,`${c.v} (${c.n})`])
-          :(companyFacets&&companyFacets.businessModels||[]).map(c=>[c.v,`${c.v} (${c.n})`]);
-        valueHtml=opts.length?`<div class="cf-value-chips">${opts.map(([v,label])=>`<span class="cf-value-chip ${sel.has(v)?'active':''}" data-idx="${idx}" data-val="${esc(v)}">${esc(label)}</span>`).join('')}</div>`:`<div class="lists-empty" style="padding:2px 0;text-align:left">No values in the DB yet</div>`;
+        const opts=f.field==='region'?CF_REGION_OPTS.slice()
+          :f.field==='country'?(companyFacets&&companyFacets.countries||[]).map(c=>[c.v,`${tc(c.v)} (${c.n})`])
+          :f.field==='industry'?(companyFacets&&companyFacets.industries||[]).map(c=>[c.v,`${tc(c.v)} (${c.n})`])
+          :(companyFacets&&companyFacets.businessModels||[]).map(c=>[c.v,`${tc(c.v)} (${c.n})`]);
+        opts.sort((a,b)=>(sel.has(a[0])?0:1)-(sel.has(b[0])?0:1));
+        const searchable=CF_SEARCHABLE_FIELDS.includes(f.field)&&opts.length>8;
+        const searchBox=searchable?`<input class="cf-chip-search" placeholder="Search ${CF_LABELS[f.field].toLowerCase()}…" oninput="filterChipSearch(${idx},this.value)">`:'';
+        const chipArea=opts.length?`<div class="cf-chip-area${searchable?'':' short'}">${opts.map(([v,label])=>`<span class="cf-value-chip ${sel.has(v)?'active':''}" data-idx="${idx}" data-val="${esc(v)}">${esc(label)}</span>`).join('')}</div>`:`<div class="cf-empty" style="padding:10px;text-align:left">No values in the DB yet</div>`;
+        valueHtml=searchBox+chipArea;
       }
     } else if(f.field==='employees'||f.field==='raised'){
       const v=f.value||{};
-      valueHtml=`<div style="display:flex;align-items:center;gap:6px"><input type="number" class="cf-num-input" placeholder="min" value="${v.min??''}" oninput="setFilterNumField(${idx},'min',this.value)"><span style="color:var(--text-3)">–</span><input type="number" class="cf-num-input" placeholder="max" value="${v.max??''}" oninput="setFilterNumField(${idx},'max',this.value)"></div>`;
+      valueHtml=`<div class="cf-range-group"><input type="number" class="cf-num-input" placeholder="min" value="${v.min??''}" oninput="setFilterNumField(${idx},'min',this.value)"><span>–</span><input type="number" class="cf-num-input" placeholder="max" value="${v.max??''}" oninput="setFilterNumField(${idx},'max',this.value)"></div>`;
     } else if(f.field==='founded_after'){
-      valueHtml=`<input type="number" class="cf-num-input" placeholder="e.g. 2015" value="${f.value??''}" oninput="setFilterScalar(${idx},this.value)">`;
+      valueHtml=`<div class="cf-range-group"><input type="number" class="cf-num-input" placeholder="e.g. 2015" value="${f.value??''}" oninput="setFilterScalar(${idx},this.value)"></div>`;
     } else if(f.field==='name'){
-      valueHtml=`<input type="text" class="cf-num-input" style="width:200px" placeholder="e.g. security" value="${esc(f.value||'')}" oninput="setFilterScalar(${idx},this.value)">`;
+      valueHtml=`<div class="cf-range-group"><input type="text" class="cf-num-input" style="width:180px" placeholder="e.g. security" value="${esc(f.value||'')}" oninput="setFilterScalar(${idx},this.value)"></div>`;
     }
-    return `<div class="cf-row">
+    return `<div class="cf-row" data-idx="${idx}" data-mode="${f.mode}">
       <div class="cf-row-main">
         <div class="cf-row-head">
+          <span class="cf-icon">${CF_ICONS[f.field]||''}</span>
           <span class="cf-label">${CF_LABELS[f.field]}</span>
-          <span class="cf-mode-btn ${f.mode==='must'?'cf-mode-must':'cf-mode-ranked'}" onclick="toggleFilterMode(${idx})">${f.mode==='must'?'Must-have':'Ranked'}</span>
-          ${f.mode==='ranked'?`<span class="cf-rank-badge">#${rankPos}</span><span class="cf-rank-btns"><button onclick="moveFilterRank(${idx},-1)" title="More important">↑</button><button onclick="moveFilterRank(${idx},1)" title="Less important">↓</button></span>`:''}
+          <span class="cf-mode-seg">
+            <button data-m="must" class="${f.mode==='must'?'on':''}" onclick="setFilterMode(${idx},'must')">Must have</button>
+            <button data-m="ranked" class="${f.mode==='ranked'?'on':''}" onclick="setFilterMode(${idx},'ranked')">Prefer</button>
+          </span>
+          ${f.mode==='ranked'?`<span class="cf-rank-stepper">rank <b>#${rankPos}</b><span class="cf-rank-btns"><button onclick="moveFilterRank(${idx},-1)" title="More important">↑</button><button onclick="moveFilterRank(${idx},1)" title="Less important">↓</button></span></span>`:''}
         </div>
         ${valueHtml}
       </div>
-      <button class="cf-remove" onclick="removeCompanyFilter(${idx})" title="Remove">×</button>
+      <button class="cf-remove" onclick="removeCompanyFilter(${idx})" title="Remove this condition">×</button>
     </div>`;
   }).join('');
 }
@@ -1704,22 +1780,29 @@ function runCompanySearch(){
 }
 function renderCompanyPreview(){
   const countEl=document.getElementById('cf-count');if(!countEl)return;
-  countEl.textContent=companyResults.total?`${companyResults.total.toLocaleString()} matching compan${companyResults.total===1?'y':'ies'}`:'No matches';
   const el=document.getElementById('cf-preview');
+  if(!companyResults.total){
+    countEl.innerHTML=`<span class="cf-results-dot" style="background:var(--text-3)"></span><span class="cf-results-count" style="color:var(--text-3)">No matches</span>`;
+    el.innerHTML=companyFilters.length?`<div class="cf-empty">Nothing matches these conditions. Try loosening a must-have filter, or switch it to “Prefer” so it ranks instead of excludes.</div>`:'';
+    return;
+  }
+  countEl.innerHTML=`<span class="cf-results-dot"></span><span class="cf-results-count">${companyResults.total.toLocaleString()} matching compan${companyResults.total===1?'y':'ies'}</span>`;
   if(!companyResults.companies.length){el.innerHTML='';return}
+  const head=`<div class="cf-table-head"><span>Name</span><span>Location</span><span>Industry</span><span>Size</span><span></span></div>`;
   const rows=companyResults.companies.map(c=>{
-    const loc=[c.hq_city,c.hq_country].filter(Boolean).join(', ');
-    const emp=(c.employees_min||c.employees_max)?`${c.employees_min??'?'}–${c.employees_max??'?'}`:'';
+    const cityNorm=(c.hq_city||'').toLowerCase().trim(),countryNorm=(c.hq_country||'').toLowerCase().trim();
+    const loc=cityNorm&&cityNorm===countryNorm?tc(c.hq_country):[c.hq_city,c.hq_country&&tc(c.hq_country)].filter(Boolean).join(', ');
+    const emp=(c.employees_min||c.employees_max)?`${c.employees_min??'?'}–${c.employees_max??'?'}`:'—';
     return `<div class="cf-company-row">
       <span class="cf-company-name">${esc(c.name)}</span>
-      <span class="cf-company-meta">${esc(loc)}</span>
-      <span class="cf-company-meta">${esc(c.industry||'')}</span>
+      <span class="cf-company-meta">${esc(loc||'—')}</span>
+      <span class="cf-company-meta">${esc(c.industry?tc(c.industry):'—')}</span>
       <span class="cf-company-meta">${esc(emp)}</span>
-      ${/^https:\/\/([a-z]+\.)?linkedin\.com\//i.test(c.linkedin_url||'')?`<a href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" class="btn-ghost" style="padding:0">↗</a>`:'<span style="width:14px;display:inline-block"></span>'}
+      ${/^https:\/\/([a-z]+\.)?linkedin\.com\//i.test(c.linkedin_url||'')?`<a href="${esc(c.linkedin_url)}" target="_blank" rel="noopener" class="btn-ghost" style="padding:0">↗</a>`:'<span></span>'}
     </div>`;
   }).join('');
-  const more=companyResults.total>companyResults.companies.length?`<div class="lists-empty">+${(companyResults.total-companyResults.companies.length).toLocaleString()} more — export to get the full list</div>`:'';
-  el.innerHTML=rows+more;
+  const more=companyResults.total>companyResults.companies.length?`<div class="cf-more">+${(companyResults.total-companyResults.companies.length).toLocaleString()} more — export to get the full list</div>`:'';
+  el.innerHTML=head+rows+more;
 }
 async function exportCompanies(){
   if(!currentJobId)return;
