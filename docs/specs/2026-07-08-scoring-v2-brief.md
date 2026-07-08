@@ -22,10 +22,11 @@ Single-file app: `src/index.js` (Worker/API), `public/index.html` (SPA).
 
 - **Scoring pipeline**: candidate title → LLM-classified into a facet
   taxonomy (family/seniority/setting) via `/api/classify`, cached forever in
-  `title_facets`/`company_facts` (D1). Classifier is Claude
-  (`ANTHROPIC_API_KEY`, not currently set) or Workers AI/Llama fallback
-  (`env.AI`, currently hitting the free-tier 10k neuron/day cap under real
-  load). Score = keyword/facet match (`scoreWithFacets`/`scoreMatch` in
+  `title_facets`/`company_facts` (D1). Classifier code supports Claude
+  (`ANTHROPIC_API_KEY`) but that path is dead: Kevin has no Anthropic API
+  access and this is settled — do not plan around the key. The real backend
+  is Workers AI/Llama (`env.AI`, currently hitting the free-tier 10k
+  neuron/day cap under real load). Score = keyword/facet match (`scoreWithFacets`/`scoreMatch` in
   `public/index.html`) + company bonuses.
 - **Company bonuses** (all additive, in `adjustedScore()`):
   `companyReputation` (per-job keep/skip ratio for that company, cached),
@@ -40,7 +41,8 @@ Single-file app: `src/index.js` (Worker/API), `public/index.html` (SPA).
   industry, business_model, employee range, funding. Built by an offline
   Python pipeline (`pipeline/`), not the Worker, except a new opt-in
   "enrich new companies via Claude Sonnet" path added 2026-07-08
-  (`/api/companies/enrich`, needs `ANTHROPIC_API_KEY`).
+  (`/api/companies/enrich` — currently wired to the Anthropic API, so
+  non-functional; needs repointing to Workers AI or dropping).
 - **Decisions**: flat `decisions` table (`user_id, candidate_key, action`),
   action is one of `kept`/`excl`/`view` only. No outcome beyond that — a
   "kept" candidate that never got contacted, or got contacted and ghosted,
@@ -148,9 +150,11 @@ stacked additively.
   a LinkedIn "About" section) if the scraper can capture it — richer text
   gives much better embedding quality but needs a scraper change, which is
   a separate project (`LinkedIn Scraper service`, not in this repo).
-- Confirm current `ANTHROPIC_API_KEY` status — several 2026-07-08 features
-  (company enrichment, and any Claude-based rerank step in #1) depend on it
-  being configured; it was not set as of this writing.
+- ~~Confirm current `ANTHROPIC_API_KEY` status~~ **RESOLVED 2026-07-08:
+  Kevin has no Anthropic API access and won't get one — hard constraint,
+  don't revisit.** Company enrichment and any rerank step in #1 must use
+  Workers AI (quota-aware) or another provider Kevin can actually access;
+  design everything below assuming zero Anthropic calls.
 
 ## References (from 2026-07-08 research pass — verify these are still current before citing to Kevin)
 
