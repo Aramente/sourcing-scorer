@@ -646,7 +646,12 @@ let preferredCompanies=[],prefMap=new Map();
 let usCityList=[],usCompanies=[];
 let liveJobs=[],customJobs=[],allJobs=[];
 let candidateCounts={};
-let scoredByJob={},currentJobId=null,currentPage=1,showWarm=false,decFilter='all',showBlockedChips=false;
+// tierFilter: 'hot' (only score>=threshold undecided candidates shown, the default),
+// 'warm' (also show WARM/below-POSSIBLE undecided candidates), 'unident' (only undecided
+// candidates whose title/company never got classified — no facets — regardless of score;
+// surfaces exactly the ones that fell back to keyword scoring, e.g. after an AI classify
+// batch failed or the daily Workers AI quota ran out).
+let scoredByJob={},currentJobId=null,currentPage=1,tierFilter='hot',decFilter='all',showBlockedChips=false;
 let currentImportName=null,importsCache={};
 const PAGE_SIZE=30;
 let _prevScreen='picker';
@@ -1145,9 +1150,53 @@ async function applyCSV(text,importName){
   const r=await importConnections(newConns,importName,currentJobId,parsed.rows.length);
   if(r.err){errEl.textContent=r.err;errEl.style.display='block';return}
   showToast(importSummary(r));
+  // Check regardless of whether any candidate scored high enough to be saved — enriching
+  // the companies DB is a durable asset independent of this one job's scoring cutoff.
+  // Delayed so it doesn't immediately stomp on the import-summary toast above.
+  setTimeout(()=>checkNewCompanies(newConns),2000);
   if(r.empty)return;
   await refreshImports();
   showScreen('imports');
+}
+// candidate.company is a bare domain (e.g. "axa.com") with no separate display name in the
+// CSV — approximate one for the enrichment prompt/DB row. Good enough for the "cheap AI
+// guess" tier this feature deliberately is; a properly-sourced name can replace it later.
+function domainToName(domain){
+  const base=String(domain||'').split('.')[0]||domain;
+  return base.split(/[-_]/).filter(Boolean).map(w=>w[0].toUpperCase()+w.slice(1)).join(' ')||domain;
+}
+// After an import, offer to enrich any company domain we've never seen before (industry/
+// region/business model, guessed from name+domain via Claude Sonnet — see /api/companies/enrich).
+// Explicit opt-in, not automatic: unlike the free keyword/Workers-AI title classifier, this
+// calls a paid API per company, so Kevin decides when that cost is worth it.
+async function checkNewCompanies(conns){
+  const domains=[...new Set(conns.map(c=>(c.company||'').toLowerCase().trim()).filter(Boolean))];
+  if(!domains.length)return;
+  const res=await fetch('/api/companies/missing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domains})}).then(r=>r.ok?r.json():null).catch(()=>null);
+  const missing=(res&&res.missing)||[];
+  if(!missing.length)return;
+  const items=missing.map(d=>({name:domainToName(d),domain:d}));
+  const t=document.getElementById('toast');
+  t.innerHTML=`${missing.length} new compan${missing.length>1?'ies':'y'} not in the database <button class="toast-undo" id="toast-enrich-btn">Enrich with AI</button>`;
+  t.classList.remove('hidden');t.classList.add('actionable');
+  document.getElementById('toast-enrich-btn').onclick=()=>{_hideToast();enrichNewCompanies(items)};
+  clearTimeout(_toastTimer);_toastTimer=setTimeout(_hideToast,10000);
+}
+async function enrichNewCompanies(items){
+  let done=0,inserted=0,failed=false;
+  for(let i=0;i<items.length;i+=20){
+    const batch=items.slice(i,i+20);
+    showProgress(`Enriching new companies… ${done}/${items.length}`);
+    const res=await fetch('/api/companies/enrich',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({companies:batch})}).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(!res){failed=true;break}
+    inserted+=res.inserted||0;
+    done+=batch.length;
+  }
+  if(failed)showToast('Enrichment failed — check that ANTHROPIC_API_KEY is configured');
+  else showToast(`${inserted} compan${inserted===1?'y':'ies'} enriched`);
+  _industryCache=new Map();
+  if(currentJobId)await loadJobCompanyBoost(currentJobId);
+  if(document.getElementById('screen-triage').classList.contains('active'))renderList();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1269,6 +1318,7 @@ async function _scrFinish(aborted){
   showToast(summary);
   _scrBody(`<div style="font-size:14px;line-height:1.6"><b>${leads.length} leads scraped.</b><br>${esc(summary)}</div><button class="btn-add" style="width:100%;margin-top:16px" onclick="hideScrape()">Done</button>`);
   if(currentJobId===_scr.jobId)await refreshImports();
+  setTimeout(()=>checkNewCompanies(conns),2000);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1367,7 +1417,7 @@ function renderImports(){
   document.getElementById('imports-list').innerHTML=viewAll+cards;
 }
 async function openImport(importName){
-  currentImportName=importName;currentPage=1;showWarm=false;decFilter='all';
+  currentImportName=importName;currentPage=1;tierFilter='hot';decFilter='all';
   _selIdx=0;_keptOpened=new Set();_decideAt={};
   const job=allJobs.find(j=>j.id===currentJobId);
   document.getElementById('triage-job-title').textContent=(job?job.title:currentJobId)+(importName?' — '+importName:'');
@@ -1421,10 +1471,11 @@ function updateStats(){
   const all=getCandidatesForJob();
   const hotCount=all.filter(c=>adjustedScore(c)>=ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
   const warmCount=all.filter(c=>adjustedScore(c)>=POSSIBLE&&adjustedScore(c)<ht&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
+  const unidentCount=all.filter(c=>!c.facets&&!isBlocked(c.company)&&!isTitleHidden(c.title)).length;
   const keptCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='kept').length;
   const sklCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='excl').length;
   const viewCount=all.filter(c=>decisions[dkey(currentJobId,c)]==='view').length;
-  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM · ${keptCount} kept · ${sklCount} skipped${viewCount?' · '+viewCount+' viewed':''}`;
+  document.getElementById('triage-stats').textContent=`${hotCount} HOT · ${warmCount} WARM${unidentCount?' · '+unidentCount+' unidentified':''} · ${keptCount} kept · ${sklCount} skipped${viewCount?' · '+viewCount+' viewed':''}`;
 }
 function _keptVisible(){return getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='kept'&&!isBlocked(c.company)&&!isTitleHidden(c.title))}
 function renderControls(){
@@ -1434,12 +1485,13 @@ function renderControls(){
   const remaining=keptWithUrl.filter(c=>!_keptOpened.has(c.url)).length;
   const openLbl=(remaining&&remaining<keptWithUrl.length)?`Open next 5 (${remaining} left)`:`Open kept (${keptWithUrl.length})`;
   const ctrlDec=(lbl,val)=>`<button class="ctrl-chip${decFilter===val?' active':''}" onclick="setDecFilter('${val}')">${lbl}</button>`;
+  const ctrlTier=(lbl,val)=>`<button class="ctrl-chip${tierFilter===val?' active':''}" onclick="setTierFilter('${val}')">${lbl}</button>`;
   const hasNoCands=(scoredByJob[currentJobId]||[]).length===0;
   document.getElementById('triage-upload-zone').classList.toggle('hidden',!hasNoCands);
   document.getElementById('triage-controls').innerHTML=hasNoCands?'':
     `${ctrlDec('All','all')} ${ctrlDec('Kept ✓','kept')} ${ctrlDec('Skipped ✕','excl')} ${ctrlDec('Viewed 👁','view')} ${ctrlDec('Undecided','undet')}
     <div class="ctrl-sep"></div>
-    <button class="ctrl-chip${showWarm?' active':''}" onclick="toggleWarm()">Show WARM</button>
+    ${ctrlTier('HOT','hot')} ${ctrlTier('+ WARM','warm')} ${ctrlTier('Unidentified','unident')}
     <div class="ctrl-sep"></div>
     <button class="ctrl-chip" onclick="openAllKept()"${keptWithUrl.length?'':' disabled'}>${openLbl}</button>
     <button class="ctrl-chip" onclick="downloadKeptCSV()"${keptCount?'':' disabled'}>Download CSV</button>
@@ -1469,7 +1521,10 @@ function renderList(){
     if(decFilter==='excl'&&d!=='excl')return false;
     if(decFilter==='view'&&d!=='view')return false;
     if(decFilter==='undet'&&d!=='undet')return false;
-    if(!showWarm&&adjustedScore(c)<ht&&d==='undet')return false;
+    if(d==='undet'){
+      if(tierFilter==='unident'&&c.facets)return false;
+      if(tierFilter==='hot'&&adjustedScore(c)<ht)return false;
+    }
     return true;
   });
   const totalPages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE));
@@ -1514,8 +1569,8 @@ function renderList(){
       </div>
       <div class="cand-reasons">${c.reasons.map(r=>`<span class="reason-tag">${esc(r)}</span>`).join('')}</div>
     </div>`;
-  }).join('')||((!showWarm&&warmCount>0&&(decFilter==='all'||decFilter==='undet'))
-    ?`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No HOT candidates match — ${warmCount} WARM hidden. <button class="ctrl-chip" onclick="toggleWarm()" style="margin-left:8px">Show WARM</button></div>`
+  }).join('')||((tierFilter==='hot'&&warmCount>0&&(decFilter==='all'||decFilter==='undet'))
+    ?`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No HOT candidates match — ${warmCount} WARM hidden. <button class="ctrl-chip" onclick="setTierFilter('warm')" style="margin-left:8px">+ WARM</button></div>`
     :`<div style="text-align:center;padding:48px 0;color:var(--text-3)">No candidates match the current filters.</div>`);
   document.getElementById('pager').innerHTML=totalPages>1
     ?`<div class="pager"><button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Prev</button><span class="page-info">Page ${currentPage} of ${totalPages} · ${visible.length} total</span><button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>Next →</button></div>`:'';
@@ -1543,7 +1598,7 @@ function _paintIndustries(){
 }
 function goPage(n){currentPage=n;_selIdx=0;renderList();window.scrollTo(0,0)}
 function setDecFilter(f){decFilter=f;currentPage=1;_selIdx=0;renderList()}
-function toggleWarm(){showWarm=!showWarm;currentPage=1;_selIdx=0;renderList()}
+function setTierFilter(t){tierFilter=t;currentPage=1;_selIdx=0;renderList()}
 function toggleBlockedChips(){showBlockedChips=!showBlockedChips;renderBlockedChips()}
 // Collapsed by default — a triage session can accumulate dozens of blocked companies,
 // and nobody wants to re-scan that list every render. Expand on demand instead.

@@ -39,8 +39,19 @@ const KB_COMPANY_KINDS = ['company','accounting_firm','consulting_esn','agency',
 const KB_MODEL = 'claude-opus-4-8';
 const KB_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';  // Workers AI fallback when no Anthropic key
 const KB_ITEMS_PER_CALL = 60;   // titles/companies per Claude request
-const KB_ITEMS_PER_CALL_AI = 40; // smaller batches for llama
+// Schema-constrained Workers AI generation scales worse than linearly with batch size —
+// measured live: 10 items ~9s, 40 items ~65s. A big import (e.g. 320 uncached items across
+// 8 concurrent batches of 40) took ~100s for the first round, showing the client's "0/N"
+// progress with no update for over a minute. Smaller batches make each round-trip land much
+// sooner so the existing per-round progress display actually reflects progress.
+const KB_ITEMS_PER_CALL_AI = 12;
 const KB_MAX_LLM_CALLS = 8;     // per Worker invocation; the client loops until pending=0
+// Measured live: firing these "concurrently" via Promise.allSettled doesn't actually
+// parallelize on Workers AI's side — 3 concurrent calls took ~23s, 8 took ~64s, almost
+// perfectly linear. So a bigger per-round budget doesn't finish faster, it just makes each
+// round-trip (and therefore each client-visible progress update) take longer. Keep AI-path
+// rounds small so progress updates land every ~15-20s instead of every ~60-100s.
+const KB_MAX_LLM_CALLS_AI = 2;
 
 function kbNormTitle(raw){
   let n = String(raw||'').toLowerCase()
@@ -200,6 +211,44 @@ async function classifyBusinessModel(env, items){
   if (typeof out === 'string'){ try { out = JSON.parse(out); } catch { return []; } }
   const raw = Array.isArray(out && out.results) ? out.results : [];
   return raw.filter(it=>it && Number.isInteger(it.i) && CB_MODELS.includes(it.business_model));
+}
+
+// ── new-company enrichment from just name+domain (no Clay/paid-data lookup) ──
+// Deliberately conservative: only fields plausibly inferable from a name and domain
+// (industry sector, region, business model). Never asked to guess employee counts,
+// funding, or founding year — those get fabricated by an LLM with zero real signal.
+// Requires a real Anthropic key; Workers AI's model catalog doesn't include Claude.
+const ENRICH_MODEL = 'claude-sonnet-5';
+const ENRICH_PROMPT = `You are enriching a company database for a recruiting/sourcing tool from just each company's name and domain — no other data source. For each company return:
+- industry: a short, specific sector guess (e.g. "cybersecurity", "fintech", "consulting", "e-commerce"), or "unknown" if the name/domain give you no real signal.
+- region: "fr" (French domain/name), "eu" (other European signal), "us" (American or no clear non-US signal), or "unknown" if genuinely ambiguous.
+- business_model: b2b_saas (software/subscriptions sold to businesses), b2c (sold directly to consumers), marketplace (two-sided platform), services (consulting/agencies/staffing — billed work, not a product), or other (hardware, public sector, education, anything else).
+Be conservative — prefer "unknown" over a confident-sounding guess when the name/domain alone don't support it. Never invent employee counts, revenue, funding, or founding year; those are not requested. The i field must echo the input index.`;
+async function enrichCompaniesLLM(env, items){
+  if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured — enrichment needs a real Claude API key (Workers AI does not host Claude models)');
+  const schema = {
+    type:'object',
+    properties:{
+      i:{type:'integer'},
+      industry:{type:'string'},
+      region:{type:'string',enum:['fr','eu','us','unknown']},
+      business_model:{type:'string',enum:CB_MODELS},
+    },
+    required:['i','industry','region','business_model'],additionalProperties:false,
+  };
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{'x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
+    body: JSON.stringify({
+      model: ENRICH_MODEL, max_tokens: 4000, system: ENRICH_PROMPT,
+      messages: [{role:'user',content:JSON.stringify(items.map((c,i)=>({i,name:c.name,domain:c.domain})))}],
+      output_config: {format:{type:'json_schema',schema:{type:'object',properties:{results:{type:'array',items:schema}},required:['results'],additionalProperties:false}}},
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text().catch(()=>'')).slice(0,300)}`);
+  const msg = await res.json();
+  const text = (msg.content||[]).find(b=>b.type==='text')?.text||'{}';
+  return (JSON.parse(text).results||[]).filter(it=>it && Number.isInteger(it.i));
 }
 
 async function kbLookup(env, table, col, norms){
@@ -395,7 +444,7 @@ async function handleAPI(request, url, session, env) {
     // falls back to keyword scoring for them).
     const hasBackend = !!(env.ANTHROPIC_API_KEY || env.AI);
     const perCall = env.ANTHROPIC_API_KEY ? KB_ITEMS_PER_CALL : KB_ITEMS_PER_CALL_AI;
-    let budget = hasBackend ? KB_MAX_LLM_CALLS : 0;
+    let budget = !hasBackend ? 0 : (env.ANTHROPIC_API_KEY ? KB_MAX_LLM_CALLS : KB_MAX_LLM_CALLS_AI);
     for (let i=0;i<tMiss.length&&budget>0;i+=perCall,budget--) batches.push({kind:'title',items:tMiss.slice(i,i+perCall)});
     for (let i=0;i<cMiss.length&&budget>0;i+=perCall,budget--) batches.push({kind:'company',items:cMiss.slice(i,i+perCall)});
 
@@ -820,6 +869,55 @@ async function handleAPI(request, url, session, env) {
     const results = {};
     for (const r of rows.results) results[r.domain.toLowerCase()] = r.industry;
     return ok({results});
+  }
+
+  // Which of these candidate-company domains aren't in the companies DB at all —
+  // drives the "N new companies — enrich?" prompt after a CSV import.
+  // POST {domains:[...]} (<=500) -> {missing:[domain,...]}
+  if (path==='/api/companies/missing' && method==='POST') {
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const domains = [...new Set((Array.isArray(body.domains)?body.domains:[])
+      .map(d=>String(d||'').toLowerCase().trim()).filter(Boolean))].slice(0,500);
+    if (!domains.length) return ok({missing:[]});
+    const qs = domains.map(()=>'?').join(',');
+    const rows = await env.DB.prepare(`SELECT LOWER(domain) AS d FROM companies WHERE LOWER(domain) IN (${qs})`).bind(...domains).all();
+    const found = new Set(rows.results.map(r=>r.d));
+    return ok({missing: domains.filter(d=>!found.has(d))});
+  }
+
+  // Enrich brand-new companies (not yet in the DB) from just name+domain via Claude Sonnet,
+  // then insert them. POST {companies:[{name,domain}]} (<=40) -> {inserted,results}
+  if (path==='/api/companies/enrich' && method==='POST') {
+    if (!env.ANTHROPIC_API_KEY) return err(400,'Company enrichment needs a real Claude API key. Run: wrangler secret put ANTHROPIC_API_KEY');
+    let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
+    const items = (Array.isArray(body.companies)?body.companies:[])
+      .map(c=>({name:String(c?.name||'').slice(0,200), domain:String(c?.domain||'').toLowerCase().trim().slice(0,200)}))
+      .filter(c=>c.domain).slice(0,40);
+    if (!items.length) return err(400,'Missing companies');
+    // Defensive re-check — two tabs (or a retry) enriching the same domain shouldn't
+    // insert a duplicate row; the companies table has no unique constraint on domain.
+    const qs = items.map(()=>'?').join(',');
+    const existing = await env.DB.prepare(`SELECT LOWER(domain) AS d FROM companies WHERE LOWER(domain) IN (${qs})`).bind(...items.map(c=>c.domain)).all();
+    const already = new Set(existing.results.map(r=>r.d));
+    const toEnrich = items.filter(c=>!already.has(c.domain));
+    if (!toEnrich.length) return ok({inserted:0, results:{}});
+    let results;
+    try { results = await enrichCompaniesLLM(env, toEnrich); }
+    catch (e) { return err(502, String(e.message||e).slice(0,300)); }
+    const now = Date.now();
+    const inserts = [], out = {};
+    for (const r of results) {
+      const c = toEnrich[r.i]; if (!c) continue;
+      const industry = (r.industry && r.industry.toLowerCase()!=='unknown') ? r.industry.slice(0,100) : null;
+      const region = ['fr','eu','us'].includes(r.region) ? r.region : null;
+      const businessModel = CB_MODELS.includes(r.business_model) ? r.business_model : null;
+      inserts.push(env.DB.prepare(
+        `INSERT INTO companies (name,name_norm,domain,region,industry,business_model,tech_stack,sources,updated_at) VALUES (?,?,?,?,?,?,'[]',?,?)`
+      ).bind(c.name, kbNormCompany(c.name), c.domain, region, industry, businessModel, JSON.stringify(['llm-inferred']), now));
+      out[c.domain] = {industry, region, business_model:businessModel};
+    }
+    for (let i=0;i<inserts.length;i+=80) await env.DB.batch(inserts.slice(i,i+80));
+    return ok({inserted: inserts.length, results: out});
   }
 
   // Distinct values for filter dropdowns.
