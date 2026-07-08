@@ -217,15 +217,18 @@ async function classifyBusinessModel(env, items){
 // Deliberately conservative: only fields plausibly inferable from a name and domain
 // (industry sector, region, business model). Never asked to guess employee counts,
 // funding, or founding year — those get fabricated by an LLM with zero real signal.
-// Requires a real Anthropic key; Workers AI's model catalog doesn't include Claude.
-const ENRICH_MODEL = 'claude-sonnet-5';
+// Runs on Workers AI (same Llama model as the classifier): no Anthropic key exists
+// for this deployment and never will — do not re-add an Anthropic path here.
+// Small batches because Workers AI runs calls effectively serially and the free
+// tier has a hard 10k-neuron/day cap; on mid-run quota exhaustion we keep partials.
+const ENRICH_ITEMS_PER_CALL_AI = 12;
 const ENRICH_PROMPT = `You are enriching a company database for a recruiting/sourcing tool from just each company's name and domain — no other data source. For each company return:
 - industry: a short, specific sector guess (e.g. "cybersecurity", "fintech", "consulting", "e-commerce"), or "unknown" if the name/domain give you no real signal.
 - region: "fr" (French domain/name), "eu" (other European signal), "us" (American or no clear non-US signal), or "unknown" if genuinely ambiguous.
 - business_model: b2b_saas (software/subscriptions sold to businesses), b2c (sold directly to consumers), marketplace (two-sided platform), services (consulting/agencies/staffing — billed work, not a product), or other (hardware, public sector, education, anything else).
 Be conservative — prefer "unknown" over a confident-sounding guess when the name/domain alone don't support it. Never invent employee counts, revenue, funding, or founding year; those are not requested. The i field must echo the input index.`;
 async function enrichCompaniesLLM(env, items){
-  if (!env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not configured — enrichment needs a real Claude API key (Workers AI does not host Claude models)');
+  if (!env.AI) throw new Error('Company enrichment needs the Workers AI binding (env.AI) — check the [ai] block in wrangler.toml');
   const schema = {
     type:'object',
     properties:{
@@ -236,19 +239,40 @@ async function enrichCompaniesLLM(env, items){
     },
     required:['i','industry','region','business_model'],additionalProperties:false,
   };
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{'x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
-    body: JSON.stringify({
-      model: ENRICH_MODEL, max_tokens: 4000, system: ENRICH_PROMPT,
-      messages: [{role:'user',content:JSON.stringify(items.map((c,i)=>({i,name:c.name,domain:c.domain})))}],
-      output_config: {format:{type:'json_schema',schema:{type:'object',properties:{results:{type:'array',items:schema}},required:['results'],additionalProperties:false}}},
-    }),
-  });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text().catch(()=>'')).slice(0,300)}`);
-  const msg = await res.json();
-  const text = (msg.content||[]).find(b=>b.type==='text')?.text||'{}';
-  return (JSON.parse(text).results||[]).filter(it=>it && Number.isInteger(it.i));
+  const all = [];
+  let runErr = null;
+  for (let off=0; off<items.length; off+=ENRICH_ITEMS_PER_CALL_AI){
+    const chunk = items.slice(off, off+ENRICH_ITEMS_PER_CALL_AI);
+    let resp;
+    try {
+      resp = await env.AI.run(KB_AI_MODEL, {
+        messages: [
+          {role:'system', content: ENRICH_PROMPT},
+          {role:'user', content: JSON.stringify(chunk.map((c,j)=>({i:off+j,name:c.name,domain:c.domain})))},
+        ],
+        max_tokens: 4000,
+        response_format: {type:'json_schema', json_schema:{
+          type:'object',properties:{results:{type:'array',items:schema}},required:['results'],
+        }},
+      });
+    } catch(e){ runErr = e; break; }  // quota (4006) or transient — keep partial progress
+    let out = resp && resp.response;
+    if (typeof out === 'string'){ try { out = JSON.parse(out); } catch { out = null; } }
+    const raw = Array.isArray(out && out.results) ? out.results : [];
+    for (const it of raw){
+      if (!it || !Number.isInteger(it.i)) continue;
+      if (!['fr','eu','us','unknown'].includes(it.region)) continue;
+      if (!CB_MODELS.includes(it.business_model)) continue;
+      all.push(it);
+    }
+  }
+  if (runErr && !all.length){
+    const m = String(runErr.message||runErr);
+    throw /4006|neuron|alloc/i.test(m)
+      ? new Error(`Workers AI daily quota reached — try again tomorrow (${m.slice(0,150)})`)
+      : runErr;
+  }
+  return all;
 }
 
 async function kbLookup(env, table, col, norms){
@@ -885,10 +909,10 @@ async function handleAPI(request, url, session, env) {
     return ok({missing: domains.filter(d=>!found.has(d))});
   }
 
-  // Enrich brand-new companies (not yet in the DB) from just name+domain via Claude Sonnet,
+  // Enrich brand-new companies (not yet in the DB) from just name+domain via Workers AI,
   // then insert them. POST {companies:[{name,domain}]} (<=40) -> {inserted,results}
   if (path==='/api/companies/enrich' && method==='POST') {
-    if (!env.ANTHROPIC_API_KEY) return err(400,'Company enrichment needs a real Claude API key. Run: wrangler secret put ANTHROPIC_API_KEY');
+    if (!env.AI) return err(400,'Company enrichment needs the Workers AI binding (env.AI) — check the [ai] block in wrangler.toml');
     let body; try { body = await request.json(); } catch { return err(400,'Invalid JSON'); }
     const items = (Array.isArray(body.companies)?body.companies:[])
       .map(c=>({name:String(c?.name||'').slice(0,200), domain:String(c?.domain||'').toLowerCase().trim().slice(0,200)}))

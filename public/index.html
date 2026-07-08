@@ -1166,7 +1166,7 @@ function domainToName(domain){
   return base.split(/[-_]/).filter(Boolean).map(w=>w[0].toUpperCase()+w.slice(1)).join(' ')||domain;
 }
 // After an import, offer to enrich any company domain we've never seen before (industry/
-// region/business model, guessed from name+domain via Claude Sonnet — see /api/companies/enrich).
+// region/business model, guessed from name+domain via Workers AI — see /api/companies/enrich).
 // Explicit opt-in, not automatic: unlike the free keyword/Workers-AI title classifier, this
 // calls a paid API per company, so Kevin decides when that cost is worth it.
 async function checkNewCompanies(conns){
@@ -1192,7 +1192,7 @@ async function enrichNewCompanies(items){
     inserted+=res.inserted||0;
     done+=batch.length;
   }
-  if(failed)showToast('Enrichment failed — check that ANTHROPIC_API_KEY is configured');
+  if(failed)showToast(inserted?`Enrichment stopped early — ${inserted} saved (Workers AI daily quota may be exhausted, try again tomorrow)`:'Enrichment failed — Workers AI daily quota may be exhausted, try again tomorrow');
   else showToast(`${inserted} compan${inserted===1?'y':'ies'} enriched`);
   _industryCache=new Map();
   if(currentJobId)await loadJobCompanyBoost(currentJobId);
