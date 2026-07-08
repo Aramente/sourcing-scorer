@@ -500,6 +500,7 @@ async function handleAPI(request, url, session, env) {
       env.DB.prepare('DELETE FROM jobs WHERE user_id=? AND id=?').bind(uid,jid),
       env.DB.prepare('DELETE FROM candidates WHERE user_id=? AND job_id=?').bind(uid,jid),
       env.DB.prepare("DELETE FROM decisions WHERE user_id=? AND candidate_key LIKE ? ESCAPE '\\'").bind(uid,likePat),
+      env.DB.prepare('DELETE FROM job_company_filters WHERE user_id=? AND job_id=?').bind(uid,jid),
     ]);
     return ok({ok:true});
   }

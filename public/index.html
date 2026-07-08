@@ -86,6 +86,10 @@ body{min-height:100vh}
 .cand-company{font-size:13px;color:var(--text-2)}
 .cand-industry{color:var(--text-3);font-weight:400}
 .cand-actions{display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:480px){
+  .cand-header{flex-wrap:wrap}
+  .cand-actions{flex-basis:100%;justify-content:flex-start;margin-top:8px}
+}
 .btn-keep,.btn-skip,.btn-view{font:inherit;font-size:13px;font-weight:500;border-radius:8px;padding:6px 14px;border:1px solid;cursor:pointer;transition:all .12s}
 .btn-keep{background:none;border-color:var(--border);color:var(--text-2)}
 .btn-keep:hover,.btn-keep.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
@@ -714,7 +718,16 @@ function saveBlk(){
 }
 function saveHPat(){saveBlk()}
 function saveRqs(){fetch('/api/refine',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(refineState)})}
-function saveSettings(){return fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}).catch(()=>{})}
+// Same overlapping-write hazard saveBlk documents above — the HOT threshold slider fires
+// one PUT per 'input' tick with the full settings object, so a fast drag could otherwise
+// persist a stale mid-drag value instead of the final one. Serialized the same way.
+let _settingsSaveChain=Promise.resolve();
+function saveSettings(){
+  _settingsSaveChain=_settingsSaveChain.then(()=>
+    fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}).catch(()=>{})
+  );
+  return _settingsSaveChain;
+}
 
 // US sourcing layer: enabled cities' lookalikes join prefMap for scoring.
 // Preferred companies win ties; a US entry only overrides a weaker tier.
@@ -787,6 +800,13 @@ let _jobCompanyBoostPromise=null;
 // exclude in getCandidatesForJob. "Prefer" conditions only ever feed jobCompanyBoost.
 let jobMustActive=false;
 let jobMustDomains=new Set();
+// ~8.6% of companies in the DB have no domain on file (19.4% in the US facet) — they can
+// still satisfy a "must" filter's WHERE clause but can never land in jobMustDomains (which
+// is keyed by domain, matching how candidate.company is stored). Without a fallback, a real
+// "Must have: Region=US" filter would silently wrongly exclude ~1 in 5 matching companies.
+// Fall back to the same fuzzy boundary-match companyPreferenceBonus already uses for these.
+let jobMustNames=[];
+let _mustExcludeCache=new Map();
 // Linear-scan match against jobCompanyBoost is the same O(N-candidates x M-boost) cost
 // companyPreferenceBonus() had before its cache — memoized the same way, cleared whenever
 // jobCompanyBoost itself is rebuilt (job change or filters saved).
@@ -800,17 +820,24 @@ async function _loadJobCompanyBoost(jobId){
   _jobBoostCache=new Map();
   jobMustActive=false;
   jobMustDomains=new Set();
+  jobMustNames=[];
+  _mustExcludeCache=new Map();
   if(!jobId)return;
   const saved=await fetch(`/api/company-filters?job=${encodeURIComponent(jobId)}`).then(r=>r.ok?r.json():null).catch(()=>null);
+  // The user may have switched to a different job while this fetch was in flight — a stale
+  // response landing after the fact must not corrupt the now-current job's filter state.
+  if(jobId!==currentJobId)return;
   const filters=(saved&&Array.isArray(saved.filters))?saved.filters:[];
   if(!filters.length)return;
   // Page through every match (not just the first 5000) — a broad "must" filter (e.g.
   // region=EU) can match more companies than that, and truncating would silently let
-  // non-matches back into the "must" set instead of excluding them.
+  // non-matches back into the "must" set instead of excluding them. Cap well above the
+  // DB's current size (~19k) so normal growth doesn't quietly start truncating again.
   const rows=[];
   let hasMustFilter=false, offset=0, total=Infinity;
-  while(rows.length<total&&rows.length<20000){
+  while(rows.length<total&&rows.length<50000){
     const res=await fetch('/api/companies/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filters,limit:5000,offset})}).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(jobId!==currentJobId)return;
     if(!res||!Array.isArray(res.companies)||!res.companies.length)break;
     hasMustFilter=!!res.hasMustFilter;
     total=res.total||0;
@@ -819,12 +846,15 @@ async function _loadJobCompanyBoost(jobId){
   }
   const maxScore=Math.max(1,...rows.map(r=>r.match_score||0));
   const map=new Map();
+  const names=[];
   for(const r of rows){
     const boost=r.match_score>0?Math.round(8+7*(r.match_score/maxScore)):8; // 8 = in-list flat bonus, up to 15 for top-ranked matches
     map.set(r.name.toLowerCase().trim(),boost);
     if(r.domain)jobMustDomains.add(r.domain.toLowerCase().trim());
+    else names.push(r.name.toLowerCase().trim());
   }
   jobCompanyBoost=map;
+  jobMustNames=names;
   jobMustActive=hasMustFilter;
 }
 function companyFilterOrPreferenceBonus(company){
@@ -983,7 +1013,8 @@ let _navGuard=false;
 function _syncHash(screen){
   if(_navGuard)return;
   let h='';
-  if(screen==='imports'||screen==='companies')h='job/'+encodeURIComponent(currentJobId||'');
+  if(screen==='imports')h='job/'+encodeURIComponent(currentJobId||'');
+  else if(screen==='companies')h='job/'+encodeURIComponent(currentJobId||'')+'/companies';
   else if(screen==='triage')h='job/'+encodeURIComponent(currentJobId||'')+'/imp/'+(currentImportName===null?'~all':encodeURIComponent(currentImportName));
   else if(screen==='settings')h='settings';
   if(location.hash.slice(1)===h)return;
@@ -991,14 +1022,24 @@ function _syncHash(screen){
 }
 async function applyHash(){
   _navGuard=true;
+  // A hash change means the user navigated (back/forward/manual edit) — an overlay left open
+  // over whatever screen used to be active would show stale data for a screen no longer shown.
+  hideLists();hideRefine();hideScrape();
   try{
     const h=location.hash.slice(1);
     if(h.startsWith('job/')){
-      const parts=h.slice(4).split('/imp/');
-      let id=null,imp;
-      try{id=decodeURIComponent(parts[0]);imp=parts.length>1?(parts[1]==='~all'?null:decodeURIComponent(parts[1])):undefined}catch{}
+      const rest=h.slice(4);
+      let id=null,imp,isCompanies=false;
+      if(rest.endsWith('/companies')){
+        isCompanies=true;
+        try{id=decodeURIComponent(rest.slice(0,-'/companies'.length))}catch{}
+      } else {
+        const parts=rest.split('/imp/');
+        try{id=decodeURIComponent(parts[0]);imp=parts.length>1?(parts[1]==='~all'?null:decodeURIComponent(parts[1])):undefined}catch{}
+      }
       if(id&&allJobs.some(j=>j.id===id)){
         await openJob(id);
+        if(isCompanies){await openCompanies();return}
         if(imp!==undefined)await openImport(imp);
         return;
       }
@@ -1010,6 +1051,19 @@ async function applyHash(){
   }finally{setTimeout(()=>{_navGuard=false},0)}
 }
 window.addEventListener('hashchange',()=>{if(!_navGuard)applyHash()});
+// Mitigate the multi-tab lost-update case: decisions made in another tab while this one was
+// backgrounded would otherwise sit stale until a manual reload, and acting on stale state here
+// can silently overwrite the other tab's decision. Refresh from the server (source of truth)
+// whenever this tab regains visibility on the triage screen.
+document.addEventListener('visibilitychange',async()=>{
+  if(document.visibilityState!=='visible')return;
+  if(!document.getElementById('screen-triage').classList.contains('active'))return;
+  const fresh=await apiFetch('/api/decisions',null);
+  if(!fresh)return;
+  decisions=fresh;
+  companyRepCache=null;
+  renderList();
+});
 function settingsBack(){showScreen(_prevScreen);if(_prevScreen==='triage')renderList();if(_prevScreen==='imports')renderImports()}
 let _toastTimer;
 function _hideToast(){const t=document.getElementById('toast');t.classList.add('hidden');t.classList.remove('actionable')}
@@ -1345,7 +1399,20 @@ async function deleteImport(importName){
   showToast(`"${label}" deleted`);
   await refreshImports();
 }
-function isMustExcluded(c){return jobMustActive&&!jobMustDomains.has((c.company||'').toLowerCase().trim())}
+function isMustExcluded(c){
+  if(!jobMustActive)return false;
+  const co=(c.company||'').toLowerCase().trim();
+  if(!co)return true;
+  if(jobMustDomains.has(co))return false;
+  if(_mustExcludeCache.has(co))return _mustExcludeCache.get(co);
+  let matched=false;
+  for(const name of jobMustNames){
+    if((name.length>=3&&_wordIn(co,name,true))||(co.length>=3&&_wordIn(name,co,false))){matched=true;break}
+  }
+  const excluded=!matched;
+  _mustExcludeCache.set(co,excluded);
+  return excluded;
+}
 function getCandidatesForJob(){const all=(scoredByJob[currentJobId]||[]).filter(c=>passesFilters(c)&&!isMustExcluded(c));if(currentImportName===null)return all;return all.filter(c=>c.importName===currentImportName)}
 function skippedCandidates(){return getCandidatesForJob().filter(c=>decisions[dkey(currentJobId,c)]==='excl')}
 
@@ -1701,12 +1768,12 @@ function updateThreshold(v){
 function updateFilter(key,val){settings[key]=val;saveSettings()}
 async function addJob(){const inp=document.getElementById('add-job-input');const title=inp.value.trim();if(!title)return;const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})}).catch(()=>null);if(!res||!res.ok){showToast('Failed to add role — please retry');return}const {id}=await res.json();jobs.push({id,title});customJobs=jobs;rebuildAllJobs();inp.value='';renderJobsList();renderPicker();showToast('Role added')}
 async function removeJob(id){jobs=jobs.filter(j=>j.id!==id);customJobs=jobs;rebuildAllJobs();delete scoredByJob[id];delete candidateCounts[id];delete importsCache[id];if(currentJobId===id){currentJobId=null;_prevScreen='picker'}await fetch(`/api/jobs/${id}`,{method:'DELETE'});renderJobsList();renderPicker()}
-async function clearDecisions(){if(!confirm('Clear all keep/skip decisions?'))return;decisions={};companyRepCache=null;await fetch('/api/decisions',{method:'DELETE'});renderList();renderPicker();showToast('Decisions cleared')}
-async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns?'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
+async function clearDecisions(){if(!confirm('Clear all keep/skip decisions? This cannot be undone.'))return;decisions={};companyRepCache=null;await fetch('/api/decisions',{method:'DELETE'});renderList();renderPicker();showToast('Decisions cleared')}
+async function clearBlocks(){if(!confirm('Remove all blocked companies and hidden patterns? This cannot be undone.'))return;blockedTerms=[];hiddenPatterns=[];saveBlk();showToast('Blocks cleared')}
 async function clearCandidates(){
   if(!currentJobId){showToast('Open a job first to clear its candidates');return}
   const job=allJobs.find(j=>j.id===currentJobId);
-  if(!confirm(`Remove all candidates for "${job?job.title:currentJobId}"?`))return;
+  if(!confirm(`Remove all candidates for "${job?job.title:currentJobId}"? This cannot be undone.`))return;
   await fetch(`/api/jobs/${currentJobId}/candidates`,{method:'DELETE'});
   scoredByJob[currentJobId]=[];
   candidateCounts[currentJobId]={total:0,hot:0,warm:0};
