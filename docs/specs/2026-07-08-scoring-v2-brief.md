@@ -40,9 +40,10 @@ Single-file app: `src/index.js` (Worker/API), `public/index.html` (SPA).
 - **Companies DB**: ~19k rows (`companies` table) — name, domain, region,
   industry, business_model, employee range, funding. Built by an offline
   Python pipeline (`pipeline/`), not the Worker, except a new opt-in
-  "enrich new companies via Claude Sonnet" path added 2026-07-08
-  (`/api/companies/enrich` — currently wired to the Anthropic API, so
-  non-functional; needs repointing to Workers AI or dropping).
+  "enrich new companies" path added 2026-07-08 (`/api/companies/enrich` —
+  runs on Workers AI/Llama, quota-aware batches of 12, live). For richer
+  bulk enrichment, Kevin approved using Claude Code session agents with
+  WebSearch to research companies and write to D1 directly.
 - **Decisions**: flat `decisions` table (`user_id, candidate_key, action`),
   action is one of `kept`/`excl`/`view` only. No outcome beyond that — a
   "kept" candidate that never got contacted, or got contacted and ghosted,
